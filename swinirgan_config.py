@@ -56,8 +56,8 @@ if mode == "train":
     num_workers = 4
 
     # The address to load the pretrained model
-    pretrained_d_model_weights_path = ""
-    pretrained_g_model_weights_path = "./results/SwinIRNet_default_sr_x4-DIV2K/g_last.pth.tar"
+    pretrained_d_model_weights_path = f""
+    pretrained_g_model_weights_path = f"./results/SwinIRNet_default_sr_x4-DIV2K/g_last.pth.tar"
 
     # Incremental training and migration training
     resume_d_model_weights_path = f""

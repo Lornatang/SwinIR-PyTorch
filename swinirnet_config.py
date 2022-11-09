@@ -37,7 +37,7 @@ upscale_factor = 4
 # Current configuration parameter method
 mode = "train"
 # Experiment name, easy to save weights and log files
-exp_name = "SwinIRNet_default_sr_x4-DIV2K-DIV2K"
+exp_name = "SwinIRNet_default_sr_x4-DIV2K"
 
 if mode == "train":
     # Dataset address
@@ -51,7 +51,7 @@ if mode == "train":
     num_workers = 4
 
     # The address to load the pretrained model
-    pretrained_g_model_weights_path = ""
+    pretrained_g_model_weights_path = f""
 
     # Incremental training and migration training
     resume_g_model_weights_path = f""
