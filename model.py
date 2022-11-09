@@ -296,6 +296,7 @@ class SwinIR(nn.Module):
         x = torch.add(x, self.mean)
 
         x = x[:, :, :height * self.upscale_factor, :width * self.upscale_factor]
+        x = torch.clamp_(x, 0.0, 1.0)
 
         return x
 
