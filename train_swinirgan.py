@@ -23,15 +23,15 @@ from torch.optim.swa_utils import AveragedModel
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+import model
 import swinirgan_config
-import efficientv2_model
 from dataset import CUDAPrefetcher, TrainValidImageDataset, TestImageDataset
 from image_quality_assessment import PSNR, SSIM
 from utils import load_state_dict, make_directory, save_checkpoint, AverageMeter, ProgressMeter
 
 model_names = sorted(
-    name for name in efficientv2_model.__dict__ if
-    name.islower() and not name.startswith("__") and callable(efficientv2_model.__dict__[name]))
+    name for name in model.__dict__ if
+    name.islower() and not name.startswith("__") and callable(model.__dict__[name]))
 
 
 def main():
@@ -46,9 +46,9 @@ def main():
     print("Load all datasets successfully.")
 
     d_model, g_model, ema_g_model = build_model()
-    print(f"Build `{esrgan_config.g_arch_name}` model successfully.")
+    print(f"Build `{swinirgan_config.g_arch_name}` model successfully.")
 
-    pixel_criterion, content_criterion, adversarial_criterion = define_loss()
+    pixel_criterion, feature_criterion, adversarial_criterion = define_loss()
     print("Define all loss functions successfully.")
 
     d_optimizer, g_optimizer = define_optimizer(d_model, g_model)
@@ -58,24 +58,24 @@ def main():
     print("Define all optimizer scheduler functions successfully.")
 
     print("Check whether to load pretrained d model weights...")
-    if esrgan_config.pretrained_d_model_weights_path:
-        d_model = load_state_dict(d_model, esrgan_config.pretrained_d_model_weights_path)
-        print(f"Loaded `{esrgan_config.pretrained_d_model_weights_path}` pretrained model weights successfully.")
+    if swinirgan_config.pretrained_d_model_weights_path:
+        d_model = load_state_dict(d_model, swinirgan_config.pretrained_d_model_weights_path)
+        print(f"Loaded `{swinirgan_config.pretrained_d_model_weights_path}` pretrained model weights successfully.")
     else:
         print("Pretrained d model weights not found.")
 
     print("Check whether to load pretrained g model weights...")
-    if esrgan_config.pretrained_g_model_weights_path:
-        g_model = load_state_dict(g_model, esrgan_config.pretrained_g_model_weights_path)
-        print(f"Loaded `{esrgan_config.pretrained_g_model_weights_path}` pretrained model weights successfully.")
+    if swinirgan_config.pretrained_g_model_weights_path:
+        g_model = load_state_dict(g_model, swinirgan_config.pretrained_g_model_weights_path)
+        print(f"Loaded `{swinirgan_config.pretrained_g_model_weights_path}` pretrained model weights successfully.")
     else:
         print("Pretrained g model weights not found.")
 
     print("Check whether the pretrained d model is restored...")
-    if esrgan_config.resume_d_model_weights_path:
+    if swinirgan_config.resume_d_model_weights_path:
         d_model, _, start_epoch, best_psnr, best_ssim, optimizer, scheduler = load_state_dict(
             d_model,
-            esrgan_config.pretrained_d_model_weights_path,
+            swinirgan_config.resume_d_model_weights_path,
             optimizer=d_optimizer,
             scheduler=d_scheduler,
             load_mode="resume")
@@ -84,10 +84,10 @@ def main():
         print("Resume training d model not found. Start training from scratch.")
 
     print("Check whether the pretrained g model is restored...")
-    if esrgan_config.resume_g_model_weights_path:
+    if swinirgan_config.resume_g_model_weights_path:
         lsrresnet_model, ema_lsrresnet_model, start_epoch, best_psnr, best_ssim, optimizer, scheduler = load_state_dict(
             g_model,
-            esrgan_config.pretrained_g_model_weights_path,
+            swinirgan_config.resume_g_model_weights_path,
             ema_model=ema_g_model,
             optimizer=g_optimizer,
             scheduler=g_scheduler,
@@ -97,32 +97,32 @@ def main():
         print("Resume training g model not found. Start training from scratch.")
 
     # Create a experiment results
-    samples_dir = os.path.join("samples", esrgan_config.exp_name)
-    results_dir = os.path.join("results", esrgan_config.exp_name)
+    samples_dir = os.path.join("samples", swinirgan_config.exp_name)
+    results_dir = os.path.join("results", swinirgan_config.exp_name)
     make_directory(samples_dir)
     make_directory(results_dir)
 
     # Create training process log file
-    writer = SummaryWriter(os.path.join("samples", "logs", esrgan_config.exp_name))
+    writer = SummaryWriter(os.path.join("samples", "logs", swinirgan_config.exp_name))
 
     # Initialize the gradient scaler
     scaler = amp.GradScaler()
 
     # Create an IQA evaluation model
-    psnr_model = PSNR(esrgan_config.upscale_factor, esrgan_config.only_test_y_channel)
-    ssim_model = SSIM(esrgan_config.upscale_factor, esrgan_config.only_test_y_channel)
+    psnr_model = PSNR(swinirgan_config.upscale_factor, swinirgan_config.only_test_y_channel)
+    ssim_model = SSIM(swinirgan_config.upscale_factor, swinirgan_config.only_test_y_channel)
 
     # Transfer the IQA model to the specified device
-    psnr_model = psnr_model.to(device=esrgan_config.device)
-    ssim_model = ssim_model.to(device=esrgan_config.device)
+    psnr_model = psnr_model.to(device=swinirgan_config.device)
+    ssim_model = ssim_model.to(device=swinirgan_config.device)
 
-    for epoch in range(start_epoch, esrgan_config.epochs):
+    for epoch in range(start_epoch, swinirgan_config.epochs):
         train(d_model,
               g_model,
               ema_g_model,
               train_prefetcher,
               pixel_criterion,
-              content_criterion,
+              feature_criterion,
               adversarial_criterion,
               d_optimizer,
               g_optimizer,
@@ -144,7 +144,7 @@ def main():
 
         # Automatically save the model with the highest index
         is_best = psnr > best_psnr and ssim > best_ssim
-        is_last = (epoch + 1) == esrgan_config.epochs
+        is_last = (epoch + 1) == swinirgan_config.epochs
         best_psnr = max(psnr, best_psnr)
         best_ssim = max(ssim, best_ssim)
         save_checkpoint({"epoch": epoch + 1,
@@ -178,17 +178,17 @@ def main():
 
 def load_dataset() -> [CUDAPrefetcher, CUDAPrefetcher]:
     # Load train, test and valid datasets
-    train_datasets = TrainValidImageDataset(esrgan_config.train_gt_images_dir,
-                                            esrgan_config.gt_image_size,
-                                            esrgan_config.upscale_factor,
+    train_datasets = TrainValidImageDataset(swinirgan_config.train_gt_images_dir,
+                                            swinirgan_config.gt_image_size,
+                                            swinirgan_config.upscale_factor,
                                             "Train")
-    test_datasets = TestImageDataset(esrgan_config.test_gt_images_dir, esrgan_config.test_lr_images_dir)
+    test_datasets = TestImageDataset(swinirgan_config.test_gt_images_dir, swinirgan_config.test_lr_images_dir)
 
     # Generator all dataloader
     train_dataloader = DataLoader(train_datasets,
-                                  batch_size=esrgan_config.batch_size,
+                                  batch_size=swinirgan_config.batch_size,
                                   shuffle=True,
-                                  num_workers=esrgan_config.num_workers,
+                                  num_workers=swinirgan_config.num_workers,
                                   pin_memory=True,
                                   drop_last=True,
                                   persistent_workers=True)
@@ -201,53 +201,58 @@ def load_dataset() -> [CUDAPrefetcher, CUDAPrefetcher]:
                                  persistent_workers=True)
 
     # Place all data on the preprocessing data loader
-    train_prefetcher = CUDAPrefetcher(train_dataloader, esrgan_config.device)
-    test_prefetcher = CUDAPrefetcher(test_dataloader, esrgan_config.device)
+    train_prefetcher = CUDAPrefetcher(train_dataloader, swinirgan_config.device)
+    test_prefetcher = CUDAPrefetcher(test_dataloader, swinirgan_config.device)
 
     return train_prefetcher, test_prefetcher
 
 
 def build_model() -> [nn.Module, nn.Module, nn.Module]:
-    d_model = efficientv2_model.__dict__[esrgan_config.d_arch_name]()
-    g_model = efficientv2_model.__dict__[esrgan_config.g_arch_name](in_channels=esrgan_config.g_in_channels,
-                                                                    out_channels=esrgan_config.g_out_channels,
-                                                                    channels=esrgan_config.g_channels)
-    d_model = d_model.to(device=esrgan_config.device)
-    g_model = g_model.to(device=esrgan_config.device)
+    d_model = model.__dict__[swinirgan_config.d_arch_name](
+        in_channels=swinirgan_config.d_in_channels,
+        out_channels=swinirgan_config.d_out_channels,
+        channels=swinirgan_config.d_channels
+    )
+    g_model = model.__dict__[swinirgan_config.g_arch_name](
+        in_channels=swinirgan_config.g_in_channels,
+        out_channels=swinirgan_config.g_out_channels,
+        channels=swinirgan_config.g_channels)
+    d_model = d_model.to(device=swinirgan_config.device)
+    g_model = g_model.to(device=swinirgan_config.device)
 
     # Create an Exponential Moving Average Model
-    ema_avg = lambda averaged_model_parameter, model_parameter, num_averaged: (1 - esrgan_config.model_ema_decay) * averaged_model_parameter + esrgan_config.model_ema_decay * model_parameter
+    ema_avg = lambda averaged_model_parameter, model_parameter, num_averaged: (1 - swinirgan_config.model_ema_decay) * averaged_model_parameter + swinirgan_config.model_ema_decay * model_parameter
     ema_g_model = AveragedModel(g_model, avg_fn=ema_avg)
 
     return d_model, g_model, ema_g_model
 
 
-def define_loss() -> [nn.L1Loss, efficientv2_model.content_loss, nn.BCEWithLogitsLoss]:
+def define_loss() -> [nn.L1Loss, model.feature_loss, nn.BCEWithLogitsLoss]:
     pixel_criterion = nn.L1Loss()
-    content_criterion = efficientv2_model.content_loss(esrgan_config.feature_model_extractor_node,
-                                                       esrgan_config.feature_model_normalize_mean,
-                                                       esrgan_config.feature_model_normalize_std)
+    feature_criterion = model.feature_loss(swinirgan_config.feature_model_extractor_nodes,
+                                           swinirgan_config.feature_model_normalize_mean,
+                                           swinirgan_config.feature_model_normalize_std)
     adversarial_criterion = nn.BCEWithLogitsLoss()
 
     # Transfer to CUDA
-    pixel_criterion = pixel_criterion.to(device=esrgan_config.device)
-    content_criterion = content_criterion.to(device=esrgan_config.device)
-    adversarial_criterion = adversarial_criterion.to(device=esrgan_config.device)
+    pixel_criterion = pixel_criterion.to(device=swinirgan_config.device)
+    feature_criterion = feature_criterion.to(device=swinirgan_config.device)
+    adversarial_criterion = adversarial_criterion.to(device=swinirgan_config.device)
 
-    return pixel_criterion, content_criterion, adversarial_criterion
+    return pixel_criterion, feature_criterion, adversarial_criterion
 
 
 def define_optimizer(d_model, g_model) -> [optim.Adam, optim.Adam]:
     d_optimizer = optim.Adam(d_model.parameters(),
-                             esrgan_config.model_lr,
-                             esrgan_config.model_betas,
-                             esrgan_config.model_eps,
-                             esrgan_config.model_weight_decay)
+                             swinirgan_config.model_lr,
+                             swinirgan_config.model_betas,
+                             swinirgan_config.model_eps,
+                             swinirgan_config.model_weight_decay)
     g_optimizer = optim.Adam(g_model.parameters(),
-                             esrgan_config.model_lr,
-                             esrgan_config.model_betas,
-                             esrgan_config.model_eps,
-                             esrgan_config.model_weight_decay)
+                             swinirgan_config.model_lr,
+                             swinirgan_config.model_betas,
+                             swinirgan_config.model_eps,
+                             swinirgan_config.model_weight_decay)
 
     return d_optimizer, g_optimizer
 
@@ -257,11 +262,11 @@ def define_scheduler(
         g_optimizer: optim.Adam
 ) -> [lr_scheduler.MultiStepLR, lr_scheduler.MultiStepLR]:
     d_scheduler = lr_scheduler.MultiStepLR(d_optimizer,
-                                           esrgan_config.lr_scheduler_milestones,
-                                           esrgan_config.lr_scheduler_gamma)
+                                           swinirgan_config.lr_scheduler_milestones,
+                                           swinirgan_config.lr_scheduler_gamma)
     g_scheduler = lr_scheduler.MultiStepLR(g_optimizer,
-                                           esrgan_config.lr_scheduler_milestones,
-                                           esrgan_config.lr_scheduler_gamma)
+                                           swinirgan_config.lr_scheduler_milestones,
+                                           swinirgan_config.lr_scheduler_gamma)
     return d_scheduler, g_scheduler
 
 
@@ -271,7 +276,7 @@ def train(
         ema_g_model: nn.Module,
         train_prefetcher: CUDAPrefetcher,
         pixel_criterion: nn.L1Loss,
-        content_criterion: efficientv2_model.content_loss,
+        feature_criterion: model.feature_loss,
         adversarial_criterion: nn.BCEWithLogitsLoss,
         d_optimizer: optim.Adam,
         g_optimizer: optim.Adam,
@@ -285,13 +290,13 @@ def train(
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     pixel_losses = AverageMeter("Pixel loss", ":6.6f")
-    content_losses = AverageMeter("Content loss", ":6.6f")
+    feature_losses = AverageMeter("Feature loss", ":6.6f")
     adversarial_losses = AverageMeter("Adversarial loss", ":6.6f")
     d_gt_probabilities = AverageMeter("D(GT)", ":6.3f")
     d_sr_probabilities = AverageMeter("D(SR)", ":6.3f")
     progress = ProgressMeter(batches,
                              [batch_time, data_time,
-                              pixel_losses, content_losses, adversarial_losses,
+                              pixel_losses, feature_losses, adversarial_losses,
                               d_gt_probabilities, d_sr_probabilities],
                              prefix=f"Epoch: [{epoch + 1}]")
 
@@ -314,47 +319,18 @@ def train(
         data_time.update(time.time() - end)
 
         # Transfer in-memory data to CUDA devices to speed up training
-        gt = batch_data["gt"].to(device=esrgan_config.device, non_blocking=True)
-        lr = batch_data["lr"].to(device=esrgan_config.device, non_blocking=True)
+        gt = batch_data["gt"].to(device=swinirgan_config.device, non_blocking=True)
+        lr = batch_data["lr"].to(device=swinirgan_config.device, non_blocking=True)
+        pixel_weight = torch.Tensor(swinirgan_config.pixel_weight).to(swinirgan_config.device)
+        feature_weight = torch.Tensor(swinirgan_config.feature_weight).to(swinirgan_config.device)
+        adversarial_weight = torch.Tensor(swinirgan_config.adversarial_weight).to(swinirgan_config.device)
 
         # Set the real sample label to 1, and the false sample label to 0
         batch_size, _, gt_height, gt_width = gt.shape
-        real_label = torch.full([batch_size, 1, gt_height, gt_width], 1.0, dtype=gt.dtype, device=esrgan_config.device)
-        fake_label = torch.full([batch_size, 1, gt_height, gt_width], 0.0, dtype=gt.dtype, device=esrgan_config.device)
-
-        # Start training the generator model
-        # During generator training, turn off discriminator backpropagation
-        for d_parameters in d_model.parameters():
-            d_parameters.requires_grad = False
-
-        # Initialize generator model gradients
-        g_model.zero_grad(set_to_none=True)
-
-        # Calculate the perceptual loss of the generator, mainly including pixel loss, feature loss and adversarial loss
-        with amp.autocast():
-            # Use the generator model to generate fake samples
-            sr = g_model(lr)
-            # Output discriminator to discriminate object probability
-            gt_output = d_model(gt.detach().clone())
-            sr_output = d_model(sr)
-            pixel_loss = esrgan_config.pixel_weight * pixel_criterion(sr, gt)
-            content_loss = esrgan_config.feature_weight * content_criterion(sr, gt)
-            # Computational adversarial network loss
-            d_loss_gt = adversarial_criterion(gt_output - torch.mean(sr_output), fake_label) * 0.5
-            d_loss_sr = adversarial_criterion(sr_output - torch.mean(gt_output), real_label) * 0.5
-            adversarial_loss = esrgan_config.adversarial_weight * (d_loss_gt + d_loss_sr)
-            # Calculate the generator total loss value
-            g_loss = pixel_loss + content_loss + adversarial_loss
-        # Call the gradient scaling function in the mixed precision API to
-        # back-propagate the gradient information of the fake samples
-        scaler.scale(g_loss).backward()
-        # Encourage the generator to generate higher quality fake samples, making it easier to fool the discriminator
-        scaler.step(g_optimizer)
-        scaler.update()
-
-        # Update EMA
-        ema_g_model.update_parameters(g_model)
-        # Finish training the generator model
+        real_label = torch.full([batch_size, 1, gt_height, gt_width], 1.0, dtype=gt.dtype,
+                                device=swinirgan_config.device)
+        fake_label = torch.full([batch_size, 1, gt_height, gt_width], 0.0, dtype=gt.dtype,
+                                device=swinirgan_config.device)
 
         # Start training the discriminator model
         # During discriminator model training, enable discriminator model backpropagation
@@ -367,19 +343,20 @@ def train(
         # Calculate the classification score of the discriminator model for real samples
         with amp.autocast():
             gt_output = d_model(gt)
-            sr_output = d_model(sr.detach().clone())
-            d_loss_gt = adversarial_criterion(gt_output - torch.mean(sr_output), real_label) * 0.5
+            d_loss_gt = adversarial_criterion(gt_output, real_label)
         # Call the gradient scaling function in the mixed precision API to
         # back-propagate the gradient information of the fake samples
-        scaler.scale(d_loss_gt).backward(retain_graph=True)
+        scaler.scale(d_loss_sr).backward(retain_graph=True)
 
         # Calculate the classification score of the discriminator model for fake samples
         with amp.autocast():
+            # Use the generator model to generate fake samples
+            sr = g_model(lr)
             sr_output = d_model(sr.detach().clone())
-            d_loss_sr = adversarial_criterion(sr_output - torch.mean(gt_output), fake_label) * 0.5
+            d_loss_sr = adversarial_criterion(sr_output, fake_label)
         # Call the gradient scaling function in the mixed precision API to
         # back-propagate the gradient information of the fake samples
-        scaler.scale(d_loss_sr).backward()
+        scaler.scale(d_loss_gt).backward()
 
         # Calculate the total discriminator loss value
         d_loss = d_loss_gt + d_loss_sr
@@ -389,6 +366,32 @@ def train(
         scaler.update()
         # Finish training the discriminator model
 
+        # Start training the generator model
+        # During generator training, turn off discriminator backpropagation
+        for d_parameters in d_model.parameters():
+            d_parameters.requires_grad = False
+
+        # Initialize generator model gradients
+        g_model.zero_grad(set_to_none=True)
+
+        # Calculate the perceptual loss of the generator, mainly including pixel loss, feature loss and adversarial loss
+        with amp.autocast():
+            pixel_loss = torch.sum(torch.mul(pixel_weight, pixel_criterion(sr, gt)))
+            feature_loss = torch.sum(torch.mul(feature_weight, feature_criterion(sr, gt)))
+            adversarial_loss = torch.sum(torch.mul(adversarial_weight, adversarial_criterion(d_model(sr), real_label)))
+            # Calculate the generator total loss value
+            g_loss = pixel_loss + feature_loss + adversarial_loss
+        # Call the gradient scaling function in the mixed precision API to
+        # back-propagate the gradient information of the fake samples
+        scaler.scale(g_loss).backward()
+        # Encourage the generator to generate higher quality fake samples, making it easier to fool the discriminator
+        scaler.step(g_optimizer)
+        scaler.update()
+
+        # Update EMA
+        ema_g_model.update_parameters(g_model)
+        # Finish training the generator model
+
         # Calculate the score of the discriminator on real samples and fake samples,
         # the score of real samples is close to 1, and the score of fake samples is close to 0
         d_gt_probability = torch.sigmoid_(torch.mean(gt_output.detach()))
@@ -396,7 +399,7 @@ def train(
 
         # Statistical accuracy and loss value for terminal data output
         pixel_losses.update(pixel_loss.item(), lr.size(0))
-        content_losses.update(content_loss.item(), lr.size(0))
+        feature_losses.update(feature_loss.item(), lr.size(0))
         adversarial_losses.update(adversarial_loss.item(), lr.size(0))
         d_gt_probabilities.update(d_gt_probability.item(), lr.size(0))
         d_sr_probabilities.update(d_sr_probability.item(), lr.size(0))
@@ -406,12 +409,12 @@ def train(
         end = time.time()
 
         # Write the data during training to the training log file
-        if batch_index % esrgan_config.train_print_frequency == 0:
+        if batch_index % swinirgan_config.train_print_frequency == 0:
             iters = batch_index + epoch * batches + 1
             writer.add_scalar("Train/D_Loss", d_loss.item(), iters)
             writer.add_scalar("Train/G_Loss", g_loss.item(), iters)
             writer.add_scalar("Train/Pixel_Loss", pixel_loss.item(), iters)
-            writer.add_scalar("Train/Content_Loss", content_loss.item(), iters)
+            writer.add_scalar("Train/Feature_Loss", feature_loss.item(), iters)
             writer.add_scalar("Train/Adversarial_Loss", adversarial_loss.item(), iters)
             writer.add_scalar("Train/D(GT)_Probability", d_gt_probability.item(), iters)
             writer.add_scalar("Train/D(SR)_Probability", d_sr_probability.item(), iters)
@@ -456,8 +459,8 @@ def validate(
     with torch.no_grad():
         while batch_data is not None:
             # Transfer the in-memory data to the CUDA device to speed up the test
-            gt = batch_data["gt"].to(device=esrgan_config.device, non_blocking=True)
-            lr = batch_data["lr"].to(device=esrgan_config.device, non_blocking=True)
+            gt = batch_data["gt"].to(device=swinirgan_config.device, non_blocking=True)
+            lr = batch_data["lr"].to(device=swinirgan_config.device, non_blocking=True)
 
             # Use the generator model to generate a fake sample
             with amp.autocast():
@@ -474,7 +477,7 @@ def validate(
             end = time.time()
 
             # Record training log information
-            if batch_index % esrgan_config.test_print_frequency == 0:
+            if batch_index % swinirgan_config.test_print_frequency == 0:
                 progress.display(batch_index + 1)
 
             # Preload the next batch of data

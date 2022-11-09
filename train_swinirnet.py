@@ -27,10 +27,11 @@ import swinirnet_config
 from dataset import CUDAPrefetcher, TrainValidImageDataset, TestImageDataset
 from image_quality_assessment import PSNR, SSIM
 from utils import load_state_dict, make_directory, save_checkpoint, AverageMeter, ProgressMeter
+import model
 
 model_names = sorted(
-    name for name in swinirnet_config.__dict__ if
-    name.islower() and not name.startswith("__") and callable(swinirnet_config.__dict__[name]))
+    name for name in model.__dict__ if
+    name.islower() and not name.startswith("__") and callable(model.__dict__[name]))
 
 
 def main():
@@ -170,7 +171,7 @@ def load_dataset() -> [CUDAPrefetcher, CUDAPrefetcher]:
 
 
 def build_model() -> [nn.Module, nn.Module]:
-    swinirnet_model = swinirnet_config.__dict__[swinirnet_config.g_arch_name](
+    swinirnet_model = model.__dict__[swinirnet_config.g_arch_name](
         in_channels=swinirnet_config.g_in_channels,
         out_channels=swinirnet_config.g_out_channels,
         channels=swinirnet_config.g_channels)

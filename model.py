@@ -256,7 +256,7 @@ class SwinIR(nn.Module):
 
         # (x - self.mean) * image_range
         x = torch.sub(x, self.mean)
-        x = torch.mul(x, 1)
+        x = torch.mul(x, 1.)
 
         if self.upsample_method == "default_sr":
             x = self.conv1(x)
@@ -430,9 +430,9 @@ class _FeatureLoss(nn.Module):
 
     def __init__(
             self,
-            feature_model_extractor_nodes: list = None,
-            feature_model_normalize_mean: list = None,
-            feature_model_normalize_std: list = None,
+            feature_model_extractor_nodes: list,
+            feature_model_normalize_mean: list,
+            feature_model_normalize_std: list,
     ) -> None:
         super(_FeatureLoss, self).__init__()
         # Get the name of the specified feature extraction node
@@ -1325,7 +1325,11 @@ def discriminator_unet(**kwargs) -> DiscriminatorUNet:
     return model
 
 
-def feature_loss(**kwargs) -> _FeatureLoss:
-    feature_loss = _FeatureLoss(**kwargs)
+def feature_loss(feature_model_extractor_nodes,
+                 feature_model_normalize_mean,
+                 feature_model_normalize_std) -> _FeatureLoss:
+    feature_loss = _FeatureLoss(feature_model_extractor_nodes,
+                                feature_model_normalize_mean,
+                                feature_model_normalize_std)
 
     return feature_loss

@@ -51,7 +51,7 @@ if mode == "train":
     test_gt_images_dir = f"./data/Set5/GTmod8"
     test_lr_images_dir = f"./data/Set5/LRbicx{upscale_factor}"
 
-    gt_image_size = 512
+    gt_image_size = int(48 * upscale_factor)
     batch_size = 8
     num_workers = 4
 
@@ -99,4 +99,4 @@ if mode == "test":
     sr_dir = f"./results/test/{exp_name}"
     gt_dir = "./data/Set5/GTmod12"
 
-    g_model_weights_path = "./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K-3c8e0f60.pth.tar"
+    g_model_weights_path = "./"
