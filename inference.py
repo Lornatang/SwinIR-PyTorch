@@ -89,7 +89,7 @@ if __name__ == "__main__":
                         help="Super-resolution image path.")
     parser.add_argument("--model_weights_path",
                         type=str,
-                        default="./results/pretrained_models/SwinIR_default_sr_x4-DIV2K-3c8e0f60.pth.tar",
+                        default="./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K-3c8e0f60.pth.tar",
                         help="Model weights file path.")
     parser.add_argument("--device_type",
                         type=str,

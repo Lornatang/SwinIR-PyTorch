@@ -18,17 +18,20 @@ from itertools import repeat
 from typing import Any
 
 import torch
-from torch import Tensor
-from torch import nn
+from torch import nn, Tensor
 from torch.nn import functional as F_torch
 from torch.nn.init import trunc_normal_
+from torch.nn.utils import spectral_norm
 from torch.utils import checkpoint
+from torchvision import models, transforms
+from torchvision.models.feature_extraction import create_feature_extractor
 
 __all__ = [
-    "SwinIR",
+    "SwinIR", "DiscriminatorUNet",
     "swinir_default_sr_x2", "swinir_default_sr_x3", "swinir_default_sr_x4", "swinir_default_sr_x8",
     "swinir_lightweight_sr_x2", "swinir_lightweight_sr_x3", "swinir_lightweight_sr_x4", "swinir_lightweight_sr_x8",
     "swinir_real_sr_x2", "swinir_real_sr_x3", "swinir_real_sr_x4", "swinir_real_sr_x8",
+    "discriminator_unet", "feature_loss",
 ]
 
 
@@ -92,10 +95,10 @@ class SwinIR(nn.Module):
             depths = [6, 6, 6, 6]
         if num_heads is None:
             num_heads = [6, 6, 6, 6]
-        if mean_value is None:
-            self.register_buffer("mean", torch.Tensor([0.4488, 0.4371, 0.4040]).view(1, 3, 1, 1))
+        if mean_value is None and in_channels == 3:
+            self.register_buffer("mean", torch.Tensor([0.4488, 0.4371, 0.4040]).view(1, in_channels, 1, 1))
         else:
-            self.register_buffer("mean", torch.Tensor(mean_value).view(1, 3, 1, 1))
+            self.register_buffer("mean", torch.Tensor(mean_value).view(1, in_channels, 1, 1))
 
         self.window_size = window_size
         self.ape = ape
@@ -333,6 +336,146 @@ class SwinIR(nn.Module):
             elif isinstance(module, nn.LayerNorm):
                 nn.init.constant_(module.bias, 0)
                 nn.init.constant_(module.weight, 1.0)
+
+
+class DiscriminatorUNet(nn.Module):
+    def __init__(
+            self,
+            in_channels: int = 3,
+            out_channels: int = 1,
+            channels: int = 64,
+            upsample_method: str = "bilinear",
+    ) -> None:
+        super(DiscriminatorUNet, self).__init__()
+        self.upsample_method = upsample_method
+
+        self.conv1 = nn.Conv2d(in_channels, 64, (3, 3), (1, 1), (1, 1))
+        self.down_block1 = nn.Sequential(
+            spectral_norm(nn.Conv2d(channels, int(channels * 2), (4, 4), (2, 2), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.down_block2 = nn.Sequential(
+            spectral_norm(nn.Conv2d(int(channels * 2), int(channels * 4), (4, 4), (2, 2), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.down_block3 = nn.Sequential(
+            spectral_norm(nn.Conv2d(int(channels * 4), int(channels * 8), (4, 4), (2, 2), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.up_block1 = nn.Sequential(
+            spectral_norm(nn.Conv2d(int(channels * 8), int(channels * 4), (3, 3), (1, 1), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.up_block2 = nn.Sequential(
+            spectral_norm(nn.Conv2d(int(channels * 4), int(channels * 2), (3, 3), (1, 1), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.up_block3 = nn.Sequential(
+            spectral_norm(nn.Conv2d(int(channels * 2), channels, (3, 3), (1, 1), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.conv2 = nn.Sequential(
+            spectral_norm(nn.Conv2d(channels, channels, (3, 3), (1, 1), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.conv3 = nn.Sequential(
+            spectral_norm(nn.Conv2d(channels, channels, (3, 3), (1, 1), (1, 1), bias=False)),
+            nn.LeakyReLU(0.2, True),
+        )
+        self.conv4 = nn.Conv2d(channels, out_channels, (3, 3), (1, 1), (1, 1))
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self._forward_impl(x)
+
+    # Support torch.script function
+    def _forward_impl(self, x: Tensor) -> Tensor:
+        out1 = self.conv1(x)
+
+        # Down-sampling
+        down1 = self.down_block1(out1)
+        down2 = self.down_block2(down1)
+        down3 = self.down_block3(down2)
+
+        # Up-sampling
+        down3 = F_torch.interpolate(down3, scale_factor=2, mode="bilinear", align_corners=False)
+        up1 = self.up_block1(down3)
+
+        up1 = torch.add(up1, down2)
+        up1 = F_torch.interpolate(up1, scale_factor=2, mode="bilinear", align_corners=False)
+        up2 = self.up_block2(up1)
+
+        up2 = torch.add(up2, down1)
+        up2 = F_torch.interpolate(up2, scale_factor=2, mode="bilinear", align_corners=False)
+        up3 = self.up_block3(up2)
+
+        up3 = torch.add(up3, out1)
+
+        out = self.conv2(up3)
+        out = self.conv3(out)
+        out = self.conv4(out)
+
+        return out
+
+
+class _FeatureLoss(nn.Module):
+    """Constructs a feature loss function based on the VGG19 network.
+    Using high-level feature mapping layers from the latter layers will focus more on the texture content of the image.
+
+    Paper reference list:
+        -`Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial Network <https://arxiv.org/pdf/1609.04802.pdf>` paper.
+        -`ESRGAN: Enhanced Super-Resolution Generative Adversarial Networks                    <https://arxiv.org/pdf/1809.00219.pdf>` paper.
+        -`Perceptual Extreme Super Resolution Network with Receptive Field Block               <https://arxiv.org/pdf/2005.12597.pdf>` paper.
+
+    """
+
+    def __init__(
+            self,
+            feature_model_extractor_nodes: list = None,
+            feature_model_normalize_mean: list = None,
+            feature_model_normalize_std: list = None,
+    ) -> None:
+        super(_FeatureLoss, self).__init__()
+        # Get the name of the specified feature extraction node
+        self.feature_model_extractor_nodes = feature_model_extractor_nodes
+        # Load the VGG19 model trained on the ImageNet dataset.
+        model = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1)
+        # Extract the thirty-sixth layer output in the VGG19 model as the content loss.
+        self.feature_extractor = create_feature_extractor(model, feature_model_extractor_nodes)
+        # set to validation mode
+        self.feature_extractor.eval()
+
+        # The preprocessing method of the input data.
+        # This is the VGG model preprocessing method of the ImageNet dataset.
+        self.normalize = transforms.Normalize(feature_model_normalize_mean, feature_model_normalize_std)
+
+        # Freeze model parameters.
+        for model_parameters in self.feature_extractor.parameters():
+            model_parameters.requires_grad = False
+
+    def forward(self, sr_tensor: Tensor, gt_tensor: Tensor) -> list[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        assert sr_tensor.size() == gt_tensor.size(), "Two tensor must have the same size"
+
+        device = sr_tensor.device
+
+        losses = []
+        # Standardized operations
+        sr_tensor = self.normalize(sr_tensor)
+        gt_tensor = self.normalize(gt_tensor)
+
+        # VGG19 conv3_4 feature extraction
+        sr_feature = self.feature_extractor(sr_tensor)
+        gt_feature = self.feature_extractor(gt_tensor)
+
+        for i in range(len(self.feature_model_extractor_nodes)):
+            losses.append(
+                F_torch.l1_loss(sr_feature[self.feature_model_extractor_nodes[i]],
+                                gt_feature[self.feature_model_extractor_nodes[i]],
+                                )
+            )
+
+        losses = torch.Tensor([losses]).to(device=device)
+
+        return losses
 
 
 class _UpsampleBlock(nn.Sequential):
@@ -1174,3 +1317,15 @@ def swinir_real_sr_x8(**kwargs) -> SwinIR:
                    **kwargs)
 
     return model
+
+
+def discriminator_unet(**kwargs) -> DiscriminatorUNet:
+    model = DiscriminatorUNet(**kwargs)
+
+    return model
+
+
+def feature_loss(**kwargs) -> _FeatureLoss:
+    feature_loss = _FeatureLoss(**kwargs)
+
+    return feature_loss
