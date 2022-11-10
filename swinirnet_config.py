@@ -65,7 +65,7 @@ if mode == "train":
     # Optimizer parameter
     model_lr = 2e-4
     model_betas = (0.9, 0.999)
-    model_eps = 1e-8
+    model_eps = 1e-4  # keep not Nan value
     model_weight_decay = 0.0
 
     # EMA parameter
