@@ -52,7 +52,7 @@ if mode == "train":
     test_lr_images_dir = f"./data/Set5/LRbicx{upscale_factor}"
 
     gt_image_size = int(48 * upscale_factor)
-    batch_size = 8
+    batch_size = 16
     num_workers = 4
 
     # The address to load the pretrained model
@@ -79,7 +79,7 @@ if mode == "train":
     # Optimizer parameter
     model_lr = 1e-4
     model_betas = (0.9, 0.999)
-    model_eps = 1e-8
+    model_eps = 1e-4
     model_weight_decay = 0.0
 
     # EMA parameter
