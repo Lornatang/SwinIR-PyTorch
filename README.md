@@ -92,7 +92,7 @@ Source of original paper results: [https://arxiv.org/pdf/2108.10257v1.pdf](https
 
 In the following table, the psnr value in `()` indicates the result of the project, and `-` indicates no test.
 
-|         Method          | Scale | Set5 (PSNR)  |  Set5 (SSIM)  | Set5 (PSNR)  |  Set5 (SSIM)  |
+|         Method          | Scale | Set5 (PSNR)  |  Set5 (SSIM)  | Set14 (PSNR) | Set14 (SSIM)  |
 |:-----------------------:|:-----:|:------------:|:-------------:|:------------:|:-------------:|
 | SwinIRNet_default_sr_x2 |   2   | 38.35(**-**) | 0.9620(**-**) | 34.14(**-**) | 0.9227(**-**) |
 | SwinIRNet_default_sr_x3 |   3   | 34.89(**-**) | 0.9312(**-**) | 30.77(**-**) | 0.8503(**-**) |
