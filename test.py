@@ -17,7 +17,7 @@ import cv2
 import torch
 from natsort import natsorted
 
-import swinirgan_config
+import swinirnet_config
 import imgproc
 import model
 from image_quality_assessment import PSNR, SSIM
@@ -30,50 +30,50 @@ model_names = sorted(
 
 def main() -> None:
     # Initialize the super-resolution bsrgan_model
-    sr_model = model.__dict__[swinirgan_config.g_arch_name](
-        in_channels=swinirgan_config.g_in_channels,
-        out_channels=swinirgan_config.g_out_channels,
-        channels=swinirgan_config.g_channels)
-    sr_model = sr_model.to(device=swinirgan_config.device)
-    print(f"Build `{swinirgan_config.g_arch_name}` model successfully.")
+    sr_model = model.__dict__[swinirnet_config.g_arch_name](
+        in_channels=swinirnet_config.g_in_channels,
+        out_channels=swinirnet_config.g_out_channels,
+        channels=swinirnet_config.g_channels)
+    sr_model = sr_model.to(device=swinirnet_config.device)
+    print(f"Build `{swinirnet_config.g_arch_name}` model successfully.")
 
     # Load the super-resolution bsrgan_model weights
-    checkpoint = torch.load(swinirgan_config.g_model_weights_path, map_location=lambda storage, loc: storage)
+    checkpoint = torch.load(swinirnet_config.g_model_weights_path, map_location=lambda storage, loc: storage)
     sr_model.load_state_dict(checkpoint["state_dict"])
-    print(f"Load `{swinirgan_config.g_arch_name}` model weights "
-          f"`{os.path.abspath(swinirgan_config.g_model_weights_path)}` successfully.")
+    print(f"Load `{swinirnet_config.g_arch_name}` model weights "
+          f"`{os.path.abspath(swinirnet_config.g_model_weights_path)}` successfully.")
 
     # Create a folder of super-resolution experiment results
-    make_directory(swinirgan_config.sr_dir)
+    make_directory(swinirnet_config.sr_dir)
 
     # Start the verification mode of the bsrgan_model.
     sr_model.eval()
 
     # Initialize the sharpness evaluation function
-    psnr = PSNR(swinirgan_config.upscale_factor, swinirgan_config.only_test_y_channel)
-    ssim = SSIM(swinirgan_config.upscale_factor, swinirgan_config.only_test_y_channel)
+    psnr = PSNR(swinirnet_config.upscale_factor, swinirnet_config.only_test_y_channel)
+    ssim = SSIM(swinirnet_config.upscale_factor, swinirnet_config.only_test_y_channel)
 
     # Set the sharpness evaluation function calculation device to the specified model
-    psnr = psnr.to(device=swinirgan_config.device, non_blocking=True)
-    ssim = ssim.to(device=swinirgan_config.device, non_blocking=True)
+    psnr = psnr.to(device=swinirnet_config.device, non_blocking=True)
+    ssim = ssim.to(device=swinirnet_config.device, non_blocking=True)
 
     # Initialize IQA metrics
     psnr_metrics = 0.0
     ssim_metrics = 0.0
 
     # Get a list of test image file names.
-    file_names = natsorted(os.listdir(swinirgan_config.lr_dir))
+    file_names = natsorted(os.listdir(swinirnet_config.lr_dir))
     # Get the number of test image files.
     total_files = len(file_names)
 
     for index in range(total_files):
-        lr_image_path = os.path.join(swinirgan_config.lr_dir, file_names[index])
-        sr_image_path = os.path.join(swinirgan_config.sr_dir, file_names[index])
-        gt_image_path = os.path.join(swinirgan_config.gt_dir, file_names[index])
+        lr_image_path = os.path.join(swinirnet_config.lr_dir, file_names[index])
+        sr_image_path = os.path.join(swinirnet_config.sr_dir, file_names[index])
+        gt_image_path = os.path.join(swinirnet_config.gt_dir, file_names[index])
 
         print(f"Processing `{os.path.abspath(lr_image_path)}`...")
-        lr_tensor = imgproc.preprocess_one_image(lr_image_path, swinirgan_config.device)
-        gt_tensor = imgproc.preprocess_one_image(gt_image_path, swinirgan_config.device)
+        lr_tensor = imgproc.preprocess_one_image(lr_image_path, swinirnet_config.device)
+        gt_tensor = imgproc.preprocess_one_image(gt_image_path, swinirnet_config.device)
 
         # Only reconstruct the Y channel image data.
         with torch.no_grad():
