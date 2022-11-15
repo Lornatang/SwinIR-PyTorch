@@ -85,4 +85,4 @@ if mode == "test":
     sr_dir = f"./results/test/{exp_name}"
     gt_dir = "./data/Set5/GTmod12"
 
-    g_model_weights_path = "./"
+    g_model_weights_path = "./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K-45658a55.pth.tar"

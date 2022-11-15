@@ -23,10 +23,6 @@ import model
 from image_quality_assessment import PSNR, SSIM
 from utils import make_directory
 
-model_names = sorted(
-    name for name in model.__dict__ if
-    name.islower() and not name.startswith("__") and callable(model.__dict__[name]))
-
 
 def main() -> None:
     # Initialize the super-resolution bsrgan_model
