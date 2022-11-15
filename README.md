@@ -92,6 +92,9 @@ Source of original paper results: [https://arxiv.org/pdf/2108.10257v1.pdf](https
 
 In the following table, the psnr value in `()` indicates the result of the project, and `-` indicates no test.
 
+**Note**: `The author uses 64 as the LR input, and this implementation uses 48 as the input, so it is normal for the index to
+be slightly lower`.
+
 |         Method          | Scale |   Set5 (PSNR)    |    Set5 (SSIM)     |   Set14 (PSNR)   |    Set14 (SSIM)    |
 |:-----------------------:|:-----:|:----------------:|:------------------:|:----------------:|:------------------:|
 | SwinIRNet_default_sr_x2 |   2   | 38.35(**38.10**) | 0.9620(**0.9617**) | 34.14(**33.72**) | 0.9227(**0.9196**) |
