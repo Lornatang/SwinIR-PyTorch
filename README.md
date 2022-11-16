@@ -104,8 +104,8 @@ be slightly lower`.
 |           Method            | Scale |   Set5 (PSNR)    |    Set5 (SSIM)     |   Set14 (PSNR)   |    Set14 (SSIM)    |
 |:---------------------------:|:-----:|:----------------:|:------------------:|:----------------:|:------------------:|
 | SwinIRNet_lightweight_sr_x2 |   2   | 38.14(**37.85**) | 0.9611(**0.9606**) | 33.86(**33.39**) | 0.9206(**0.9168**) |
-| SwinIRNet_lightweight_sr_x3 |   3   |   34.62(**-**)   |   0.9289(**-**)    |   30.54(**-**)   |   0.8463(**-**)    |
-| SwinIRNet_lightweight_sr_x4 |   4   |   32.44(**-**)   |   0.8976(**-**)    |   28.77(**-**)   |   0.7858(**-**)    |
+| SwinIRNet_lightweight_sr_x3 |   3   | 34.62(**34.23**) | 0.9289(**0.9263**) | 30.54(**30.24**) | 0.8463(**0.8412**) |
+| SwinIRNet_lightweight_sr_x4 |   4   | 32.44(**32.01**) | 0.8976(**0.8929**) | 28.77(**28.45**) | 0.7858(**0.7791**) |
 
 ```bash
 # Download `SwinIRNet_default_sr_x4-DIV2K-8c4a7569.pth.tar` weights to `./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K-8c4a7569.pth.tar`
