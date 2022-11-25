@@ -15,8 +15,7 @@ import os
 import time
 
 import torch
-from torch import nn
-from torch import optim
+from torch import nn, optim
 from torch.cuda import amp
 from torch.optim import lr_scheduler
 from torch.optim.swa_utils import AveragedModel
@@ -28,10 +27,6 @@ import swinirgan_config
 from dataset import CUDAPrefetcher, TrainValidImageDataset, TestImageDataset
 from image_quality_assessment import PSNR, SSIM
 from utils import load_state_dict, make_directory, save_checkpoint, AverageMeter, ProgressMeter
-
-model_names = sorted(
-    name for name in model.__dict__ if
-    name.islower() and not name.startswith("__") and callable(model.__dict__[name]))
 
 
 def main():
@@ -227,11 +222,11 @@ def build_model() -> [nn.Module, nn.Module, nn.Module]:
     return d_model, g_model, ema_g_model
 
 
-def define_loss() -> [nn.L1Loss, model.feature_loss, nn.BCEWithLogitsLoss]:
+def define_loss() -> [nn.L1Loss, model.FeatureLoss, nn.BCEWithLogitsLoss]:
     pixel_criterion = nn.L1Loss()
-    feature_criterion = model.feature_loss(swinirgan_config.feature_model_extractor_nodes,
-                                           swinirgan_config.feature_model_normalize_mean,
-                                           swinirgan_config.feature_model_normalize_std)
+    feature_criterion = model.FeatureLoss(swinirgan_config.feature_model_extractor_nodes,
+                                          swinirgan_config.feature_model_normalize_mean,
+                                          swinirgan_config.feature_model_normalize_std)
     adversarial_criterion = nn.BCEWithLogitsLoss()
 
     # Transfer to CUDA
@@ -276,7 +271,7 @@ def train(
         ema_g_model: nn.Module,
         train_prefetcher: CUDAPrefetcher,
         pixel_criterion: nn.L1Loss,
-        feature_criterion: model.feature_loss,
+        feature_criterion: model.FeatureLoss,
         adversarial_criterion: nn.BCEWithLogitsLoss,
         d_optimizer: optim.Adam,
         g_optimizer: optim.Adam,
@@ -327,9 +322,13 @@ def train(
 
         # Set the real sample label to 1, and the false sample label to 0
         batch_size, _, gt_height, gt_width = gt.shape
-        real_label = torch.full([batch_size, 1, gt_height, gt_width], 1.0, dtype=gt.dtype,
+        real_label = torch.full([batch_size, 1, gt_height, gt_width],
+                                1.0,
+                                dtype=gt.dtype,
                                 device=swinirgan_config.device)
-        fake_label = torch.full([batch_size, 1, gt_height, gt_width], 0.0, dtype=gt.dtype,
+        fake_label = torch.full([batch_size, 1, gt_height, gt_width],
+                                0.0,
+                                dtype=gt.dtype,
                                 device=swinirgan_config.device)
 
         # Start training the discriminator model
@@ -346,7 +345,7 @@ def train(
             d_loss_gt = adversarial_criterion(gt_output, real_label)
         # Call the gradient scaling function in the mixed precision API to
         # back-propagate the gradient information of the fake samples
-        scaler.scale(d_loss_sr).backward(retain_graph=True)
+        scaler.scale(d_loss_gt).backward(retain_graph=True)
 
         # Calculate the classification score of the discriminator model for fake samples
         with amp.autocast():
@@ -356,7 +355,7 @@ def train(
             d_loss_sr = adversarial_criterion(sr_output, fake_label)
         # Call the gradient scaling function in the mixed precision API to
         # back-propagate the gradient information of the fake samples
-        scaler.scale(d_loss_gt).backward()
+        scaler.scale(d_loss_sr).backward()
 
         # Calculate the total discriminator loss value
         d_loss = d_loss_gt + d_loss_sr
