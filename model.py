@@ -27,11 +27,11 @@ from torchvision import models, transforms
 from torchvision.models.feature_extraction import create_feature_extractor
 
 __all__ = [
-    "SwinIR", "DiscriminatorUNet",
+    "SwinIR", "DiscriminatorUNet", "FeatureLoss",
     "swinir_default_sr_x2", "swinir_default_sr_x3", "swinir_default_sr_x4", "swinir_default_sr_x8",
     "swinir_lightweight_sr_x2", "swinir_lightweight_sr_x3", "swinir_lightweight_sr_x4", "swinir_lightweight_sr_x8",
     "swinir_real_sr_x2", "swinir_real_sr_x3", "swinir_real_sr_x4", "swinir_real_sr_x8",
-    "discriminator_unet", "feature_loss",
+    "discriminator_unet",
 ]
 
 
@@ -417,7 +417,7 @@ class DiscriminatorUNet(nn.Module):
         return out
 
 
-class _FeatureLoss(nn.Module):
+class FeatureLoss(nn.Module):
     """Constructs a feature loss function based on the VGG19 network.
     Using high-level feature mapping layers from the latter layers will focus more on the texture content of the image.
 
@@ -434,7 +434,7 @@ class _FeatureLoss(nn.Module):
             feature_model_normalize_mean: list,
             feature_model_normalize_std: list,
     ) -> None:
-        super(_FeatureLoss, self).__init__()
+        super(FeatureLoss, self).__init__()
         # Get the name of the specified feature extraction node
         self.feature_model_extractor_nodes = feature_model_extractor_nodes
         # Load the VGG19 model trained on the ImageNet dataset.
@@ -1323,13 +1323,3 @@ def discriminator_unet(**kwargs) -> DiscriminatorUNet:
     model = DiscriminatorUNet(**kwargs)
 
     return model
-
-
-def feature_loss(feature_model_extractor_nodes,
-                 feature_model_normalize_mean,
-                 feature_model_normalize_std) -> _FeatureLoss:
-    feature_loss = _FeatureLoss(feature_model_extractor_nodes,
-                                feature_model_normalize_mean,
-                                feature_model_normalize_std)
-
-    return feature_loss
