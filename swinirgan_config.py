@@ -46,9 +46,9 @@ exp_name = "SwinIRGAN_default_sr_x4-DIV2K"
 
 if mode == "train":
     # Dataset address
-    train_gt_images_dir = f"./data/DFO2K/ESRGAN/train"
+    train_gt_images_dir = f"./data/DIV2K/SwinIR/train"
 
-    test_gt_images_dir = f"./data/Set5/GTmod8"
+    test_gt_images_dir = f"./data/Set5/GTmod12"
     test_lr_images_dir = f"./data/Set5/LRbicx{upscale_factor}"
 
     gt_image_size = int(48 * upscale_factor)
@@ -57,7 +57,7 @@ if mode == "train":
 
     # The address to load the pretrained model
     pretrained_d_model_weights_path = f""
-    pretrained_g_model_weights_path = f"./results/SwinIRNet_default_sr_x4-DIV2K/g_last.pth.tar"
+    pretrained_g_model_weights_path = f"./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K-45658a55.pth.tar"
 
     # Incremental training and migration training
     resume_d_model_weights_path = f""
