@@ -186,17 +186,18 @@ def tensor_to_image(tensor: Tensor, range_norm: bool, half: bool) -> Any:
     return image
 
 
-def preprocess_one_image(image_path: str, device: torch.device) -> Tensor:
+def preprocess_one_image(image_path: str, range_norm: bool, half: bool, device: torch.device) -> Tensor:
+    # read an image using OpenCV
     image = cv2.imread(image_path).astype(np.float32) / 255.0
 
-    # BGR to RGB
+    # BGR image channel data to RGB image channel data
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Convert image data to pytorch format data
-    tensor = image_to_tensor(image, False, False).unsqueeze_(0)
+    # Convert RGB image channel data to image formats supported by PyTorch
+    tensor = image_to_tensor(image, range_norm, half).unsqueeze_(0)
 
-    # Transfer tensor channel image format data to CUDA device
-    tensor = tensor.to(device=device, memory_format=torch.channels_last, non_blocking=True)
+    # Data transfer to the specified device
+    tensor = tensor.to(device, non_blocking=True)
 
     return tensor
 
