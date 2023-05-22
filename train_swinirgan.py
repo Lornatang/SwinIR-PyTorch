@@ -165,7 +165,7 @@ def main(seed: int):
                          "psnr": psnr,
                          "ssim": ssim,
                          "state_dict": g_model.state_dict(),
-                         "ema_state_dict": ema_g_model.state_dict(),
+                         "ema_state_dict": ema_g_model.state_dict() if ema_g_model is not None else None,
                          "optimizer": g_optimizer.state_dict()},
                         f"epoch_{epoch + 1}.pth.tar",
                         samples_dir,
