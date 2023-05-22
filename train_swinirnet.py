@@ -1,4 +1,4 @@
-# Copyright 2022 Dakewe Biotech Corporation. All Rights Reserved.
+# Copyright 2023 Dakewe Biotech Corporation. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
 #   You may obtain a copy of the License at
@@ -12,125 +12,131 @@
 # limitations under the License.
 # ==============================================================================
 import os
+import random
 import time
+from typing import Any
 
+import numpy as np
 import torch
-from torch import nn
-from torch import optim
+import yaml
+from torch import nn, optim
+from torch.backends import cudnn
 from torch.cuda import amp
 from torch.optim import lr_scheduler
 from torch.optim.swa_utils import AveragedModel
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-import swinirnet_config
-from dataset import CUDAPrefetcher, TrainValidImageDataset, TestImageDataset
-from image_quality_assessment import PSNR, SSIM
-from utils import load_state_dict, make_directory, save_checkpoint, AverageMeter, ProgressMeter
 import model
+from dataset import CUDAPrefetcher, BaseImageDataset, PairedImageDataset
+from imgproc import random_crop_torch, random_rotate_torch, random_vertically_flip_torch, random_horizontally_flip_torch
+from test import test
+from utils import build_iqa_model, load_resume_state_dict, make_directory, save_checkpoint, \
+    Summary, AverageMeter, ProgressMeter
 
-model_names = sorted(
-    name for name in model.__dict__ if
-    name.islower() and not name.startswith("__") and callable(model.__dict__[name]))
+# read configuration file
+with open("configs/train/SWINIRNet_X4.yaml", "r") as f:
+    config = yaml.full_load(f)
+
+# Default to start training from scratch
+start_epoch = 0
+
+# Initialize the image clarity evaluation index
+best_psnr = 0.0
+best_ssim = 0.0
+
+# Create the folder where the model weights are saved
+samples_dir = os.path.join("samples", config["EXP_NAME"])
+results_dir = os.path.join("results", config["EXP_NAME"])
+make_directory(samples_dir)
+make_directory(results_dir)
+
+# create model training log
+writer = SummaryWriter(os.path.join("samples", "logs", config["EXP_NAME"]))
 
 
-def main():
-    # Initialize the number of training epochs
-    start_epoch = 0
+def main(seed: int):
+    # Fixed random number seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
-    # Initialize training to generate network evaluation indicators
-    best_psnr = 0.0
-    best_ssim = 0.0
+    # Because the size of the input image is fixed, the fixed CUDNN convolution method can greatly increase the running speed
+    cudnn.benchmark = True
 
-    train_prefetcher, test_prefetcher = load_dataset()
-    print("Load all datasets successfully.")
+    # Initialize the mixed precision method
+    scaler = amp.GradScaler()
 
-    swinirnet_model, ema_swinirnet_model = build_model()
-    print(f"Build `{swinirnet_config.g_arch_name}` model successfully.")
+    # Initialize global variables
+    global start_epoch, best_psnr, best_ssim
 
-    criterion = define_loss()
-    print("Define all loss functions successfully.")
+    # Define the running device number
+    device = torch.device("cuda", config["DEVICE_ID"])
 
-    optimizer = define_optimizer(swinirnet_model)
-    print("Define all optimizer functions successfully.")
+    # Define the basic functions needed to start training
+    train_prefetcher, paired_test_prefetcher = load_dataset(config, device)
+    g_model, ema_g_model = build_model(config, device)
+    pixel_criterion = define_loss(config, device)
+    optimizer = define_optimizer(g_model, config)
 
-    scheduler = define_scheduler(optimizer)
-    print("Define all optimizer scheduler functions successfully.")
-
-    print("Check whether to load pretrained model weights...")
-    if swinirnet_config.pretrained_g_model_weights_path:
-        swinirnet_model = load_state_dict(swinirnet_model, swinirnet_config.pretrained_g_model_weights_path)
-        print(f"Loaded `{swinirnet_config.pretrained_g_model_weights_path}` pretrained model weights successfully.")
-    else:
-        print("Pretrained model weights not found.")
-
-    print("Check whether the pretrained model is restored...")
-    if swinirnet_config.resume_g_model_weights_path:
-        swinirnet_model, ema_swinirnet_model, start_epoch, best_psnr, best_ssim, optimizer, scheduler = load_state_dict(
-            swinirnet_model,
-            swinirnet_config.resume_g_model_weights_path,
-            ema_swinirnet_model,
+    # Load the last training interruption model node
+    if config["TRAIN"]["CHECKPOINT"]["RESUMED_G_MODEL"]:
+        g_model, ema_g_model, start_epoch, best_psnr, best_ssim, optimizer = load_resume_state_dict(
+            g_model,
+            ema_g_model,
             optimizer,
-            scheduler,
-            "resume")
-        print("Loaded pretrained model weights.")
+            config["MODEL"]["G"]["COMPILED"],
+            config["TRAIN"]["CHECKPOINT"]["RESUMED_G_MODEL"],
+        )
+        print(f"Loaded `{config['TRAIN']['CHECKPOINT']['RESUMED_G_MODEL']}` resume model weights successfully.")
     else:
         print("Resume training model not found. Start training from scratch.")
 
-    # Create a experiment results
-    samples_dir = os.path.join("samples", swinirnet_config.exp_name)
-    results_dir = os.path.join("results", swinirnet_config.exp_name)
-    make_directory(samples_dir)
-    make_directory(results_dir)
+    # Initialize the image clarity evaluation method
+    psnr_model, ssim_model = build_iqa_model(
+        config["SCALE"],
+        config["TEST"]["ONLY_TEST_Y_CHANNEL"],
+        device,
+    )
 
-    # Create training process log file
-    writer = SummaryWriter(os.path.join("samples", "logs", swinirnet_config.exp_name))
-
-    # Initialize the gradient scaler
-    scaler = amp.GradScaler()
-
-    # Create an IQA evaluation model
-    psnr_model = PSNR(swinirnet_config.upscale_factor, swinirnet_config.only_test_y_channel)
-    ssim_model = SSIM(swinirnet_config.upscale_factor, swinirnet_config.only_test_y_channel)
-
-    # Transfer the IQA model to the specified device
-    psnr_model = psnr_model.to(device=swinirnet_config.device)
-    ssim_model = ssim_model.to(device=swinirnet_config.device)
-
-    for epoch in range(start_epoch, swinirnet_config.epochs):
-        train(swinirnet_model,
-              ema_swinirnet_model,
+    for epoch in range(start_epoch, config["TRAIN"]["HYP"]["EPOCHS"]):
+        train(g_model,
+              ema_g_model,
               train_prefetcher,
-              criterion,
+              pixel_criterion,
               optimizer,
               epoch,
               scaler,
-              writer)
-        psnr, ssim = validate(swinirnet_model,
-                              test_prefetcher,
-                              epoch,
-                              writer,
-                              psnr_model,
-                              ssim_model,
-                              "Test")
+              writer,
+              device,
+              config["TRAIN"]["PRINT_FREQ"])
+        psnr, ssim = test(g_model,
+                          paired_test_prefetcher,
+                          psnr_model,
+                          ssim_model,
+                          device,
+                          config["TEST"]["PRINT_FREQ"],
+                          False,
+                          None)
         print("\n")
 
-        # Update LR
-        scheduler.step()
+        # Write the evaluation indicators of each round of Epoch to the log
+        writer.add_scalar(f"Test/PSNR", psnr, epoch + 1)
+        writer.add_scalar(f"Test/SSIM", ssim, epoch + 1)
 
-        # Automatically save the model with the highest index
+        # Automatically save model weights
         is_best = psnr > best_psnr and ssim > best_ssim
-        is_last = (epoch + 1) == swinirnet_config.epochs
+        is_last = (epoch + 1) == config["TRAIN"]["HYP"]["EPOCHS"]
         best_psnr = max(psnr, best_psnr)
         best_ssim = max(ssim, best_ssim)
         save_checkpoint({"epoch": epoch + 1,
-                         "best_psnr": best_psnr,
-                         "best_ssim": best_ssim,
-                         "state_dict": swinirnet_model.state_dict(),
-                         "ema_state_dict": ema_swinirnet_model.state_dict(),
-                         "optimizer": optimizer.state_dict(),
-                         "scheduler": scheduler.state_dict()},
-                        f"g_epoch_{epoch + 1}.pth.tar",
+                         "psnr": psnr,
+                         "ssim": ssim,
+                         "state_dict": g_model.state_dict(),
+                         "ema_state_dict": ema_g_model.state_dict(),
+                         "optimizer": optimizer.state_dict()},
+                        f"epoch_{epoch + 1}.pth.tar",
                         samples_dir,
                         results_dir,
                         "g_best.pth.tar",
@@ -139,223 +145,198 @@ def main():
                         is_last)
 
 
-def load_dataset() -> [CUDAPrefetcher, CUDAPrefetcher]:
-    # Load train, test and valid datasets
-    train_datasets = TrainValidImageDataset(swinirnet_config.train_gt_images_dir,
-                                            swinirnet_config.gt_image_size,
-                                            swinirnet_config.upscale_factor,
-                                            "Train")
-    test_datasets = TestImageDataset(swinirnet_config.test_gt_images_dir, swinirnet_config.test_lr_images_dir)
+def load_dataset(
+        config: Any,
+        device: torch.device,
+) -> [CUDAPrefetcher, CUDAPrefetcher]:
+    # Load the train dataset
+    degenerated_train_datasets = BaseImageDataset(
+        config["TRAIN"]["DATASET"]["TRAIN_GT_IMAGES_DIR"],
+        None,
+        config["SCALE"],
+    )
 
-    # Generator all dataloader
-    train_dataloader = DataLoader(train_datasets,
-                                  batch_size=swinirnet_config.batch_size,
-                                  shuffle=True,
-                                  num_workers=swinirnet_config.num_workers,
-                                  pin_memory=True,
-                                  drop_last=True,
-                                  persistent_workers=True)
-    test_dataloader = DataLoader(test_datasets,
-                                 batch_size=1,
-                                 shuffle=False,
-                                 num_workers=1,
-                                 pin_memory=True,
-                                 drop_last=False,
-                                 persistent_workers=True)
+    # Load the registration test dataset
+    paired_test_datasets = PairedImageDataset(config["TEST"]["DATASET"]["PAIRED_TEST_GT_IMAGES_DIR"],
+                                              config["TEST"]["DATASET"]["PAIRED_TEST_LR_IMAGES_DIR"])
 
-    # Place all data on the preprocessing data loader
-    train_prefetcher = CUDAPrefetcher(train_dataloader, swinirnet_config.device)
-    test_prefetcher = CUDAPrefetcher(test_dataloader, swinirnet_config.device)
+    # generate dataset iterator
+    degenerated_train_dataloader = DataLoader(degenerated_train_datasets,
+                                              batch_size=config["TRAIN"]["HYP"]["IMGS_PER_BATCH"],
+                                              shuffle=config["TRAIN"]["HYP"]["SHUFFLE"],
+                                              num_workers=config["TRAIN"]["HYP"]["NUM_WORKERS"],
+                                              pin_memory=config["TRAIN"]["HYP"]["PIN_MEMORY"],
+                                              drop_last=True,
+                                              persistent_workers=config["TRAIN"]["HYP"]["PERSISTENT_WORKERS"])
+    paired_test_dataloader = DataLoader(paired_test_datasets,
+                                        batch_size=config["TEST"]["HYP"]["IMGS_PER_BATCH"],
+                                        shuffle=config["TEST"]["HYP"]["SHUFFLE"],
+                                        num_workers=config["TEST"]["HYP"]["NUM_WORKERS"],
+                                        pin_memory=config["TEST"]["HYP"]["PIN_MEMORY"],
+                                        drop_last=False,
+                                        persistent_workers=config["TEST"]["HYP"]["PERSISTENT_WORKERS"])
 
-    return train_prefetcher, test_prefetcher
+    # Replace the data set iterator with CUDA to speed up
+    train_prefetcher = CUDAPrefetcher(degenerated_train_dataloader, device)
+    paired_test_prefetcher = CUDAPrefetcher(paired_test_dataloader, device)
 
-
-def build_model() -> [nn.Module, nn.Module]:
-    swinirnet_model = model.__dict__[swinirnet_config.g_arch_name](
-        in_channels=swinirnet_config.g_in_channels,
-        out_channels=swinirnet_config.g_out_channels,
-        channels=swinirnet_config.g_channels)
-    swinirnet_model = swinirnet_model.to(device=swinirnet_config.device)
-
-    # Create an Exponential Moving Average Model
-    ema_avg = lambda averaged_model_parameter, model_parameter, num_averaged: (1 - swinirnet_config.model_ema_decay) * averaged_model_parameter + swinirnet_config.model_ema_decay * model_parameter
-    ema_swinirnet_model = AveragedModel(swinirnet_model, avg_fn=ema_avg)
-
-    return swinirnet_model, ema_swinirnet_model
+    return train_prefetcher, paired_test_prefetcher
 
 
-def define_loss() -> nn.L1Loss:
-    criterion = nn.L1Loss()
-    criterion = criterion.to(device=swinirnet_config.device)
+def build_model(
+        config: Any,
+        device: torch.device,
+) -> [nn.Module, nn.Module or Any]:
+    g_model = model.__dict__[config["MODEL"]["G"]["NAME"]](in_channels=config["MODEL"]["G"]["IN_CHANNELS"],
+                                                           out_channels=config["MODEL"]["G"]["OUT_CHANNELS"],
+                                                           channels=config["MODEL"]["G"]["CHANNELS"])
+    g_model = g_model.to(device)
 
-    return criterion
+    if config["MODEL"]["EMA"]["ENABLE"]:
+        # Generate an exponential average model based on a generator to stabilize model training
+        ema_decay = config["MODEL"]["EMA"]["DECAY"]
+        ema_avg_fn = lambda averaged_model_parameter, model_parameter, num_averaged: \
+            (1 - ema_decay) * averaged_model_parameter + ema_decay * model_parameter
+        ema_g_model = AveragedModel(g_model, device=device, avg_fn=ema_avg_fn)
+    else:
+        ema_g_model = None
+
+    # compile model
+    if config["MODEL"]["G"]["COMPILED"]:
+        g_model = torch.compile(g_model)
+    if config["MODEL"]["EMA"]["COMPILED"] and ema_g_model is not None:
+        ema_g_model = torch.compile(ema_g_model)
+
+    return g_model, ema_g_model
 
 
-def define_optimizer(swinirnet_model) -> optim.Adam:
-    optimizer = optim.Adam(swinirnet_model.parameters(),
-                           swinirnet_config.model_lr,
-                           swinirnet_config.model_betas,
-                           swinirnet_config.model_eps,
-                           swinirnet_config.model_weight_decay)
+def define_loss(config: Any, device: torch.device) -> nn.L1Loss:
+    if config["TRAIN"]["LOSSES"]["PIXEL_LOSS"]["NAME"] == "L1Loss":
+        pixel_criterion = nn.L1Loss()
+    else:
+        raise NotImplementedError(f"Loss {config['TRAIN']['LOSSES']['PIXEL_LOSS']['NAME']} is not implemented.")
+    pixel_criterion = pixel_criterion.to(device)
+
+    return pixel_criterion
+
+
+def define_optimizer(g_model: nn.Module, config: Any) -> optim.Adam:
+    if config["TRAIN"]["OPTIM"]["NAME"] == "Adam":
+        optimizer = optim.Adam(g_model.parameters(),
+                               config["TRAIN"]["OPTIM"]["LR"],
+                               config["TRAIN"]["OPTIM"]["BETAS"],
+                               config["TRAIN"]["OPTIM"]["EPS"],
+                               config["TRAIN"]["OPTIM"]["WEIGHT_DECAY"])
+    else:
+        raise NotImplementedError(f"Optimizer {config['TRAIN']['OPTIM']['NAME']} is not implemented.")
 
     return optimizer
 
 
-def define_scheduler(optimizer) -> lr_scheduler.MultiStepLR:
-    scheduler = lr_scheduler.MultiStepLR(optimizer,
-                                         swinirnet_config.lr_scheduler_milestones,
-                                         swinirnet_config.lr_scheduler_gamma)
+def define_scheduler(optimizer, config: Any) -> lr_scheduler.MultiStepLR:
+    if config["TRAIN"]["LR_SCHEDULER"]["NAME"] == "MultiStepLR":
+        scheduler = lr_scheduler.MultiStepLR(optimizer,
+                                             config["TRAIN"]["LR_SCHEDULER"]["MILESTONES"],
+                                             config["TRAIN"]["LR_SCHEDULER"]["GAMMA"])
+    else:
+        raise NotImplementedError(f"LR Scheduler {config['TRAIN']['LR_SCHEDULER']['NAME']} is not implemented.")
 
     return scheduler
 
 
 def train(
-        swinirnet_model: nn.Module,
-        ema_swinirnet_model: nn.Module,
+        g_model: nn.Module,
+        ema_g_model: nn.Module,
         train_prefetcher: CUDAPrefetcher,
-        criterion: nn.L1Loss,
+        pixel_criterion: nn.L1Loss,
         optimizer: optim.Adam,
         epoch: int,
         scaler: amp.GradScaler,
-        writer: SummaryWriter
+        writer: SummaryWriter,
+        device: torch.device,
+        print_frequency: int,
 ) -> None:
     # Calculate how many batches of data are in each Epoch
     batches = len(train_prefetcher)
     # Print information of progress bar during training
-    batch_time = AverageMeter("Time", ":6.3f")
-    data_time = AverageMeter("Data", ":6.3f")
-    losses = AverageMeter("Loss", ":6.6f")
-    progress = ProgressMeter(batches, [batch_time, data_time, losses], prefix=f"Epoch: [{epoch + 1}]")
+    batch_time = AverageMeter("Time", ":6.3f", Summary.NONE)
+    data_time = AverageMeter("Data", ":6.3f", Summary.NONE)
+    losses = AverageMeter("Loss", ":6.6f", Summary.NONE)
+    progress = ProgressMeter(batches,
+                             [batch_time, data_time, losses],
+                             prefix=f"Epoch: [{epoch + 1}]")
 
     # Put the generative network model in training mode
-    swinirnet_model.train()
+    g_model.train()
 
-    # Initialize the number of data batches to print logs on the terminal
+    # Define loss function weights
+    loss_weight = torch.Tensor(config["TRAIN"]["LOSSES"]["PIXEL_LOSS"]["WEIGHT"]).to(device)
+
+    # Initialize data batches
     batch_index = 0
-
-    # Initialize the data loader and load the first batch of data
+    # Set the dataset iterator pointer to 0
     train_prefetcher.reset()
+    # Record the start time of training a batch
+    end = time.time()
+    # load the first batch of data
     batch_data = train_prefetcher.next()
 
-    # Get the initialization training time
-    end = time.time()
-
     while batch_data is not None:
-        # Calculate the time it takes to load a batch of data
+        # Load batches of data
+        gt = batch_data["gt"].to(device, non_blocking=True)
+        lr = batch_data["lr"].to(device, non_blocking=True)
+
+        # image data augmentation
+        gt, lr = random_crop_torch(gt,
+                                   lr,
+                                   config["TRAIN"]["DATASET"]["GT_IMAGE_SIZE"],
+                                   config["SCALE"])
+        gt, lr = random_rotate_torch(gt, lr, config["SCALE"], [0, 90, 180, 270])
+        gt, lr = random_vertically_flip_torch(gt, lr)
+        gt, lr = random_horizontally_flip_torch(gt, lr)
+
+        # Record the time to load a batch of data
         data_time.update(time.time() - end)
 
-        # Transfer in-memory data to CUDA devices to speed up training
-        gt = batch_data["gt"].to(device=swinirnet_config.device, non_blocking=True)
-        lr = batch_data["lr"].to(device=swinirnet_config.device, non_blocking=True)
-        loss_weight = torch.Tensor(swinirnet_config.loss_weight).to(swinirnet_config.device)
-
-        # Initialize generator gradients
-        swinirnet_model.zero_grad(set_to_none=True)
+        # Initialize the generator model gradient
+        g_model.zero_grad(set_to_none=True)
 
         # Mixed precision training
         with amp.autocast():
-            sr = swinirnet_model(lr)
-            loss = torch.sum(torch.mul(loss_weight, criterion(sr, gt)))
+            sr = g_model(lr)
+            pixel_loss = pixel_criterion(sr, gt)
+            pixel_loss = torch.sum(torch.mul(loss_weight, pixel_loss))
 
         # Backpropagation
-        scaler.scale(loss).backward()
-        # update generator weights
+        scaler.scale(pixel_loss).backward()
+        # update model weights
         scaler.step(optimizer)
         scaler.update()
 
-        # Update EMA
-        ema_swinirnet_model.update_parameters(swinirnet_model)
+        if config["MODEL"]["EMA"]["ENABLE"]:
+            # update exponentially averaged model weights
+            ema_g_model.update_parameters(g_model)
 
-        # Statistical loss value for terminal data output
-        losses.update(loss.item(), lr.size(0))
+        # record the loss value
+        losses.update(pixel_loss.item(), lr.size(0))
 
-        # Calculate the time it takes to fully train a batch of data
+        # Record the total time of training a batch
         batch_time.update(time.time() - end)
         end = time.time()
 
-        # Write the data during training to the training log file
-        if batch_index % swinirnet_config.train_print_frequency == 0:
-            # Record loss during training and output to file
-            writer.add_scalar("Train/Loss", loss.item(), batch_index + epoch * batches + 1)
-            progress.display(batch_index + 1)
+        # Output training log information once
+        if batch_index % print_frequency == 0:
+            # write training log
+            iters = batch_index + epoch * batches
+            writer.add_scalar("Train_degenerated/Loss", pixel_loss.item(), iters)
+            progress.display(batch_index)
 
         # Preload the next batch of data
         batch_data = train_prefetcher.next()
 
-        # Add 1 to the number of data batches to ensure that the terminal prints data normally
+        # Add 1 to the number of data batches
         batch_index += 1
 
 
-def validate(
-        swinirnet_model: nn.Module,
-        data_prefetcher: CUDAPrefetcher,
-        epoch: int,
-        writer: SummaryWriter,
-        psnr_model: nn.Module,
-        ssim_model: nn.Module,
-        mode: str
-) -> [float, float]:
-    # Calculate how many batches of data are in each Epoch
-    batch_time = AverageMeter("Time", ":6.3f")
-    psnres = AverageMeter("PSNR", ":4.2f")
-    ssimes = AverageMeter("SSIM", ":4.4f")
-    progress = ProgressMeter(len(data_prefetcher), [batch_time, psnres, ssimes], prefix=f"{mode}: ")
-
-    # Put the adversarial network model in validation mode
-    swinirnet_model.eval()
-
-    # Initialize the number of data batches to print logs on the terminal
-    batch_index = 0
-
-    # Initialize the data loader and load the first batch of data
-    data_prefetcher.reset()
-    batch_data = data_prefetcher.next()
-
-    # Get the initialization test time
-    end = time.time()
-
-    with torch.no_grad():
-        while batch_data is not None:
-            # Transfer the in-memory data to the CUDA device to speed up the test
-            gt = batch_data["gt"].to(device=swinirnet_config.device, non_blocking=True)
-            lr = batch_data["lr"].to(device=swinirnet_config.device, non_blocking=True)
-
-            # Use the generator model to generate a fake sample
-            with amp.autocast():
-                sr = swinirnet_model(lr)
-
-            # Statistical loss value for terminal data output
-            psnr = psnr_model(sr, gt)
-            ssim = ssim_model(sr, gt)
-            psnres.update(psnr.item(), lr.size(0))
-            ssimes.update(ssim.item(), lr.size(0))
-
-            # Calculate the time it takes to fully test a batch of data
-            batch_time.update(time.time() - end)
-            end = time.time()
-
-            # Record training log information
-            if batch_index % swinirnet_config.test_print_frequency == 0:
-                progress.display(batch_index + 1)
-
-            # Preload the next batch of data
-            batch_data = data_prefetcher.next()
-
-            # After training a batch of data, add 1 to the number of data batches to ensure that the
-            # terminal print data normally
-            batch_index += 1
-
-    # print metrics
-    progress.display_summary()
-
-    if mode == "Valid" or mode == "Test":
-        writer.add_scalar(f"{mode}/PSNR", psnres.avg, epoch + 1)
-        writer.add_scalar(f"{mode}/SSIM", ssimes.avg, epoch + 1)
-    else:
-        raise ValueError("Unsupported mode, please use `Valid` or `Test`.")
-
-    return psnres.avg, ssimes.avg
-
-
 if __name__ == "__main__":
-    main()
+    main(config["SEED"])

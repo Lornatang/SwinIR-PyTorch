@@ -17,10 +17,6 @@ Contains DIV2K, DIV8K, Flickr2K, OST, T91, Set5, Set14, BSDS100 and BSDS200, etc
             - 001.png
             - 002.png
             ...
-        - DIV2K_valid_HR
-            - 801.png
-            - 802.png
-            ...
 
 # Test dataset struct
 - Set5
@@ -48,7 +44,10 @@ python3 run.py
 - DIV2K
     - SwinIR
         - train
-        - valid
+            - GT
+                - 001_0001.png
+                - 001_0002.png
+                ...
         - original
 
 # Test dataset
