@@ -24,7 +24,7 @@ TRAIN:
   DATASET:
     TRAIN_GT_IMAGES_DIR: ./data/DIV2K/train/GT
 
-    GT_IMAGE_SIZE: 256
+    GT_IMAGE_SIZE: 192
 
   # Model file address, used for pre-training and recovery training
   CHECKPOINT:

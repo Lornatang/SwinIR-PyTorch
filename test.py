@@ -169,9 +169,6 @@ def main() -> None:
                       config["SAVE_IMAGE"],
                       save_dir_path)
 
-    print(f"PSNR: {psnr:.2f} dB\n"
-          f"SSIM: {ssim:.4f} [u]\n")
-
 
 if __name__ == "__main__":
     main()
