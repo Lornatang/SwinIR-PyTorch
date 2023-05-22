@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+import argparse
 import os
 import time
 from typing import Any
@@ -26,12 +27,8 @@ from dataset import CUDAPrefetcher, PairedImageDataset
 from imgproc import tensor_to_image
 from utils import build_iqa_model, load_pretrained_state_dict, make_directory, AverageMeter, ProgressMeter, Summary
 
-# Read parameters from configuration file
-with open("configs/test/SWINIRNet_X4.yaml", "r") as f:
-    config = yaml.full_load(f)
 
-
-def load_dataset(device: torch.device) -> CUDAPrefetcher:
+def load_dataset(config: Any, device: torch.device) -> CUDAPrefetcher:
     test_datasets = PairedImageDataset(config["DATASET"]["PAIRED_TEST_GT_IMAGES_DIR"],
                                        config["DATASET"]["PAIRED_TEST_LR_IMAGES_DIR"])
     test_dataloader = DataLoader(test_datasets,
@@ -46,7 +43,7 @@ def load_dataset(device: torch.device) -> CUDAPrefetcher:
     return test_data_prefetcher
 
 
-def build_model(device: torch.device) -> nn.Module | Any:
+def build_model(config: Any, device: torch.device) -> nn.Module | Any:
     g_model = model.__dict__[config["MODEL"]["NAME"]](in_channels=config["MODEL"]["IN_CHANNELS"],
                                                       out_channels=config["MODEL"]["OUT_CHANNELS"],
                                                       channels=config["MODEL"]["CHANNELS"])
@@ -65,15 +62,16 @@ def test(
         psnr_model: nn.Module,
         ssim_model: nn.Module,
         device: torch.device,
-        print_frequency: int,
-        save_image: bool,
-        save_dir_path: Any,
+        config: Any,
 ) -> [float, float]:
-    if save_image and save_dir_path is None:
+    if config["TEST"]["SAVE_IMAGE"] and config["TEST"]["SAVE_DIR_PATH"] is None:
         raise ValueError("Image save location cannot be empty!")
 
-    if save_image and not os.path.exists(save_dir_path):
-        raise ValueError("The image save location does not exist!")
+    if config["TEST"]["SAVE_IMAGE"]:
+        save_dir_path = os.path.join(config["SAVE_DIR_PATH"], config["EXP_NAME"])
+        make_directory(save_dir_path)
+    else:
+        save_dir_path = None
 
     # The information printed by the progress bar
     batch_time = AverageMeter("Time", ":6.3f", Summary.NONE)
@@ -118,13 +116,13 @@ def test(
             end = time.time()
 
             # Output a verification log information
-            if batch_index % print_frequency == 0:
+            if batch_index % config["TEST"]["PRINT_FREQ"] == 0:
                 progress.display(batch_index)
 
             # Save the processed image after super-resolution
-            if save_image and batch_data["image_name"] is None:
+            if config["TEST"]["SAVE_IMAGE"] and batch_data["image_name"] is None:
                 raise ValueError("The image_name is None, please check the dataset.")
-            if save_image:
+            if config["TEST"]["SAVE_IMAGE"]:
                 image_name = os.path.basename(batch_data["image_name"][0])
                 sr_image = tensor_to_image(sr, False, False)
                 sr_image = cv2.cvtColor(sr_image, cv2.COLOR_RGB2BGR)
@@ -143,9 +141,21 @@ def test(
 
 
 def main() -> None:
+    # Read parameters from configuration file
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_path",
+                        type=str,
+                        default="./configs/test/SWINIRNet_DEFAULT_SR_X4.yaml",
+                        required=True,
+                        help="Path to test config file.")
+    args = parser.parse_args()
+
+    with open(args.config_path, "r") as f:
+        config = yaml.full_load(f)
+
     device = torch.device("cuda", config["DEVICE_ID"])
-    test_data_prefetcher = load_dataset(device)
-    g_model = build_model(device)
+    test_data_prefetcher = load_dataset(config, device)
+    g_model = build_model(config, device)
     psnr_model, ssim_model = build_iqa_model(
         config["SCALE"],
         config["ONLY_TEST_Y_CHANNEL"],
@@ -160,14 +170,12 @@ def main() -> None:
     if config["SAVE_IMAGE"]:
         make_directory(save_dir_path)
 
-    psnr, ssim = test(g_model,
-                      test_data_prefetcher,
-                      psnr_model,
-                      ssim_model,
-                      device,
-                      config["PRINT_FREQ"],
-                      config["SAVE_IMAGE"],
-                      save_dir_path)
+    test(g_model,
+         test_data_prefetcher,
+         psnr_model,
+         ssim_model,
+         device,
+         config)
 
 
 if __name__ == "__main__":

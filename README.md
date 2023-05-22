@@ -37,53 +37,28 @@ Please refer to `README.md` in the `data` directory for the method of making a d
 
 ## How Test and Train
 
-Both training and testing only need to modify the `swinirnet_config.py` file and `swinirgan_config.py` file.
+Both training and testing only need to modify yaml file.
 
 ### Test SwinIR_default_sr_x4
 
-Modify the `swinirnet_config.py` file.
-
-- line 31: `g_arch_name` change to `swinir_default_sr_x4`.
-- line 36: `upscale_factor` change to `4`.
-- line 38: `mode` change to `test`.
-- line 40: `exp_name` change to `SwinIRNet_default_sr_x4-Set5`.
-- line 84: `lr_dir` change to `f"./data/Set5/LRbicx{upscale_factor}"`.
-- line 86: `gt_dir` change to `f"./data/Set5/GTmod12"`.
-- line 88: `g_model_weights_path` change to `./results/pretrained_models/`.
-
 ```bash
-python3 test.py
+python3 test.py --config_path ./configs/test/SWINIRNet_DEFAULT_SR_X4.yaml
 ```
 
 ### Train SwinIR_default_sr_x4
 
-Modify the `swinirnet_config.py` file.
-
-- line 31: `g_arch_name` change to `swinir_default_sr_x4`.
-- line 36: `upscale_factor` change to `4`.
-- line 38: `mode` change to `train`.
-- line 40: `exp_name` change to `SwinIRNet_default_sr_x4-DIV2K`.
-- line 84: `lr_dir` change to `f"./data/Set5/LRbicx{upscale_factor}"`.
-- line 86: `gt_dir` change to `f"./data/Set5/GTmod12"`.
-
 ```bash
-python3 train_swinirnet.py
+python3 train_swinirnet.py --config_path ./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml
 ```
 
 ### Resume train SwinIR_default_sr_x4
 
-Modify the `swinirnet_config.py` file.
+Modify the `./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml` file.
 
-- line 31: `g_arch_name` change to `swinir_default_sr_x4`.
-- line 36: `upscale_factor` change to `4`.
-- line 38: `mode` change to `train`.
-- line 40: `exp_name` change to `SwinIRNet_default_sr_x4-DIV2K`.
-- line 57: `resume_g_model_weights_path` change to `./samples/SwinIRNet_default_sr_x4-DIV2K/g_epoch_xxx.pth.tar`.
-- line 84: `lr_dir` change to `f"./data/Set5/LRbicx{upscale_factor}"`.
-- line 86: `gt_dir` change to `f"./data/Set5/GTmod12"`.
+- line 32: `RESUMED_G_MODEL` change to `./samples/SwinIRNet_default_sr_x4-DIV2K/g_epoch_xxx.pth.tar`.
 
 ```bash
-python3 train_swinirnet.py
+python3 train_swinirnet.py --config_path ./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml
 ```
 
 ## Result

@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+import argparse
 import os
 import random
 import time
@@ -34,33 +35,25 @@ from test import test
 from utils import build_iqa_model, load_resume_state_dict, load_pretrained_state_dict, make_directory, save_checkpoint, \
     Summary, AverageMeter, ProgressMeter
 
-# read configuration file
-with open("configs/train/SWINIRGAN_X4.yaml", "r") as f:
-    config = yaml.full_load(f)
 
-# Default to start training from scratch
-start_epoch = 0
+def main():
+    # Read parameters from configuration file
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_path",
+                        type=str,
+                        default="./configs/train/SWINIRGAN_DEFAULT_SR_X4.yaml",
+                        required=True,
+                        help="Path to train config file.")
+    args = parser.parse_args()
 
-# Initialize the image clarity evaluation index
-best_psnr = 0.0
-best_ssim = 0.0
+    with open(args.config_path, "r") as f:
+        config = yaml.full_load(f)
 
-# Create the folder where the model weights are saved
-samples_dir = os.path.join("samples", config["EXP_NAME"])
-results_dir = os.path.join("results", config["EXP_NAME"])
-make_directory(samples_dir)
-make_directory(results_dir)
-
-# create model training log
-writer = SummaryWriter(os.path.join("samples", "logs", config["EXP_NAME"]))
-
-
-def main(seed: int):
     # Fixed random number seed
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    random.seed(config["seed"])
+    np.random.seed(config["seed"])
+    torch.manual_seed(config["seed"])
+    torch.cuda.manual_seed_all(config["seed"])
 
     # Because the size of the input image is fixed, the fixed CUDNN convolution method can greatly increase the running speed
     cudnn.benchmark = True
@@ -68,8 +61,12 @@ def main(seed: int):
     # Initialize the mixed precision method
     scaler = amp.GradScaler()
 
-    # Initialize global variables
-    global start_epoch, best_psnr, best_ssim
+    # Default to start training from scratch
+    start_epoch = 0
+
+    # Initialize the image clarity evaluation index
+    best_psnr = 0.0
+    best_ssim = 0.0
 
     # Define the running device number
     device = torch.device("cuda", config["DEVICE_ID"])
@@ -127,6 +124,15 @@ def main(seed: int):
         device,
     )
 
+    # Create the folder where the model weights are saved
+    samples_dir = os.path.join("samples", config["EXP_NAME"])
+    results_dir = os.path.join("results", config["EXP_NAME"])
+    make_directory(samples_dir)
+    make_directory(results_dir)
+
+    # create model training log
+    writer = SummaryWriter(os.path.join("samples", "logs", config["EXP_NAME"]))
+
     for epoch in range(start_epoch, config["TRAIN"]["HYP"]["EPOCHS"]):
         train(g_model,
               ema_g_model,
@@ -141,15 +147,13 @@ def main(seed: int):
               scaler,
               writer,
               device,
-              config["TRAIN"]["PRINT_FREQ"])
+              config)
         psnr, ssim = test(g_model,
                           paired_test_prefetcher,
                           psnr_model,
                           ssim_model,
                           device,
-                          config["TEST"]["PRINT_FREQ"],
-                          False,
-                          None)
+                          config)
         print("\n")
 
         # Write the evaluation indicators of each round of Epoch to the log
@@ -340,7 +344,7 @@ def train(
         scaler: amp.GradScaler,
         writer: SummaryWriter,
         device: torch.device,
-        print_frequency: int,
+        config: Any,
 ) -> None:
     # Calculate how many batches of data there are under a dataset iterator
     batches = len(train_prefetcher)
@@ -470,7 +474,7 @@ def train(
         end = time.time()
 
         # Output training log information once
-        if batch_index % print_frequency == 0:
+        if batch_index % config["TRAIN"]["PRINT_FREQ"] == 0:
             # write training log
             iters = batch_index + epoch * batches
             writer.add_scalar("Train_degenerated/D_Loss", d_loss.item(), iters)
@@ -492,4 +496,4 @@ def train(
 
 
 if __name__ == "__main__":
-    main(config["SEED"])
+    main()
