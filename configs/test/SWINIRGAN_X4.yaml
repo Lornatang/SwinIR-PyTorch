@@ -1,5 +1,5 @@
 # experiment name
-EXP_NAME: SwinIRNet_default_sr_x4-DIV2K-Set5
+EXP_NAME: SwinIRGAN_default_sr_x4-DIV2K-Set5
 # random number seed
 SEED: 0
 # Super resolution magnification factor
