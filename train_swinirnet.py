@@ -50,10 +50,10 @@ def main():
         config = yaml.full_load(f)
 
     # Fixed random number seed
-    random.seed(config["seed"])
-    np.random.seed(config["seed"])
-    torch.manual_seed(config["seed"])
-    torch.cuda.manual_seed_all(config["seed"])
+    random.seed(config["SEED"])
+    np.random.seed(config["SEED"])
+    torch.manual_seed(config["SEED"])
+    torch.cuda.manual_seed_all(config["SEED"])
 
     # Because the size of the input image is fixed, the fixed CUDNN convolution method can greatly increase the running speed
     cudnn.benchmark = True
