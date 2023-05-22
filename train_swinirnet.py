@@ -31,7 +31,7 @@ import model
 from dataset import CUDAPrefetcher, BaseImageDataset, PairedImageDataset
 from imgproc import random_crop_torch, random_rotate_torch, random_vertically_flip_torch, random_horizontally_flip_torch
 from test import test
-from utils import build_iqa_model, load_resume_state_dict, make_directory, save_checkpoint, \
+from utils import build_iqa_model, load_resume_state_dict, load_pretrained_state_dict, make_directory, save_checkpoint, \
     Summary, AverageMeter, ProgressMeter
 
 # read configuration file
@@ -79,6 +79,15 @@ def main(seed: int):
     g_model, ema_g_model = build_model(config, device)
     pixel_criterion = define_loss(config, device)
     optimizer = define_optimizer(g_model, config)
+
+    # Load the pretrained model
+    if config["TRAIN"]["CHECKPOINT"]["PRETRAINED_G_MODEL"]:
+        g_model = load_pretrained_state_dict(g_model,
+                                             config["MODEL"]["G"]["COMPILED"],
+                                             config["TRAIN"]["CHECKPOINT"]["PRETRAINED_G_MODEL"])
+        print(f"Loaded `{config['TRAIN']['CHECKPOINT']['PRETRAINED_G_MODEL']}` pretrained model weights successfully.")
+    else:
+        print("Pretrained model weights not found.")
 
     # Load the last training interruption model node
     if config["TRAIN"]["CHECKPOINT"]["RESUMED_G_MODEL"]:
