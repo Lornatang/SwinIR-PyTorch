@@ -76,6 +76,7 @@ def main():
     g_model, ema_g_model = build_model(config, device)
     pixel_criterion = define_loss(config, device)
     optimizer = define_optimizer(g_model, config)
+    scheduler = define_scheduler(optimizer, config)
 
     # Load the pretrained model
     if config["TRAIN"]["CHECKPOINT"]["PRETRAINED_G_MODEL"]:
@@ -126,6 +127,10 @@ def main():
               writer,
               device,
               config)
+
+        # Update LR
+        scheduler.step()
+
         psnr, ssim = test(g_model,
                           paired_test_prefetcher,
                           psnr_model,

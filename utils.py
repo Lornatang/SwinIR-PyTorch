@@ -145,7 +145,7 @@ def load_resume_state_dict(
     psnr = checkpoint["psnr"]
     ssim = checkpoint["ssim"]
     state_dict = checkpoint["state_dict"]
-    ema_state_dict = checkpoint["ema_state_dict"]
+    ema_state_dict = checkpoint["ema_state_dict"] if "ema_state_dict" in checkpoint else None
 
     model = load_state_dict(model, compile_state, state_dict)
     if ema_state_dict is not None:
