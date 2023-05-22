@@ -477,15 +477,15 @@ def train(
         if batch_index % config["TRAIN"]["PRINT_FREQ"] == 0:
             # write training log
             iters = batch_index + epoch * batches
-            writer.add_scalar("Train_degenerated/D_Loss", d_loss.item(), iters)
-            writer.add_scalar("Train_degenerated/D(GT)_Loss", d_loss_gt.item(), iters)
-            writer.add_scalar("Train_degenerated/D(SR)_Loss", d_loss_sr.item(), iters)
-            writer.add_scalar("Train_degenerated/G_Loss", g_loss.item(), iters)
-            writer.add_scalar("Train_degenerated/Pixel_Loss", pixel_loss.item(), iters)
-            writer.add_scalar("Train_degenerated/Feature_Loss", feature_loss.item(), iters)
-            writer.add_scalar("Train_degenerated/Adversarial_Loss", adversarial_loss.item(), iters)
-            writer.add_scalar("Train_degenerated/D(GT)_Probability", torch.sigmoid_(torch.mean(gt_output.detach())).item(), iters)
-            writer.add_scalar("Train_degenerated/D(SR)_Probability", torch.sigmoid_(torch.mean(sr_output.detach())).item(), iters)
+            writer.add_scalar("Train/D_Loss", d_loss.item(), iters)
+            writer.add_scalar("Train/D(GT)_Loss", d_loss_gt.item(), iters)
+            writer.add_scalar("Train/D(SR)_Loss", d_loss_sr.item(), iters)
+            writer.add_scalar("Train/G_Loss", g_loss.item(), iters)
+            writer.add_scalar("Train/Pixel_Loss", pixel_loss.item(), iters)
+            writer.add_scalar("Train/Feature_Loss", feature_loss.item(), iters)
+            writer.add_scalar("Train/Adversarial_Loss", adversarial_loss.item(), iters)
+            writer.add_scalar("Train/D(GT)_Probability", torch.sigmoid_(torch.mean(gt_output.detach())).item(), iters)
+            writer.add_scalar("Train/D(SR)_Probability", torch.sigmoid_(torch.mean(sr_output.detach())).item(), iters)
             progress.display(batch_index)
 
         # Preload the next batch of data

@@ -346,7 +346,7 @@ def train(
         if batch_index % config["TRAIN"]["PRINT_FREQ"] == 0:
             # write training log
             iters = batch_index + epoch * batches
-            writer.add_scalar("Train_degenerated/Loss", pixel_loss.item(), iters)
+            writer.add_scalar("Train/Loss", pixel_loss.item(), iters)
             progress.display(batch_index)
 
         # Preload the next batch of data
