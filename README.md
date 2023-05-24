@@ -48,7 +48,7 @@ python3 test.py --config_path ./configs/test/SWINIRNet_DEFAULT_SR_X4.yaml
 ### Train SwinIR_default_sr_x4
 
 ```bash
-python3 train_swinirnet.py --config_path ./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml
+python3 train_net.py --config_path ./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml
 ```
 
 ### Resume train SwinIR_default_sr_x4
@@ -58,7 +58,7 @@ Modify the `./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml` file.
 - line 32: `RESUMED_G_MODEL` change to `./samples/SwinIRNet_default_sr_x4-DIV2K/g_epoch_xxx.pth.tar`.
 
 ```bash
-python3 train_swinirnet.py --config_path ./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml
+python3 train_net.py --config_path ./configs/train/SWINIRNet_DEFAULT_SR_X4.yaml
 ```
 
 ## Result
@@ -98,7 +98,7 @@ Output:
 
 ```text
 Build `swinir_default_sr_x4` model successfully.
-Load `swinir_default_sr_x4` model weights `./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K-8c4a7569.pth.tar` successfully.
+Load `swinir_default_sr_x4` model weights `/SwinIR-PyTorch/results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K.pth.tar` successfully.
 SR image save to `./figure/sr_img_012.png`
 ```
 
