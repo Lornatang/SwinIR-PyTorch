@@ -89,10 +89,11 @@ def main():
 
     # Load the last training interruption model node
     if config["TRAIN"]["CHECKPOINT"]["RESUMED_G_MODEL"]:
-        g_model, ema_g_model, start_epoch, best_psnr, best_ssim, optimizer = load_resume_state_dict(
+        g_model, ema_g_model, start_epoch, best_psnr, best_ssim, optimizer, scheduler = load_resume_state_dict(
             g_model,
             ema_g_model,
             optimizer,
+            scheduler,
             config["MODEL"]["G"]["COMPILED"],
             config["TRAIN"]["CHECKPOINT"]["RESUMED_G_MODEL"],
         )
