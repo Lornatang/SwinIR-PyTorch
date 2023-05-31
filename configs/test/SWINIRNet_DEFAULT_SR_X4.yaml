@@ -7,7 +7,7 @@ SCALE: 4
 # run device model
 DEVICE_ID: 0
 # Model weights path
-MODEL_PATH: "./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K.pth.tar"
+MODEL_WEIGHTS_PATH: "./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K.pth.tar"
 
 # Model define
 MODEL:
@@ -34,5 +34,4 @@ TEST:
   ONLY_TEST_Y_CHANNEL: True
 
   SAVE_IMAGE: False
-  SAVE_DIR_PATH: None
-  PRINT_FREQ: 1
+  SAVE_IMAGE_DIR: None

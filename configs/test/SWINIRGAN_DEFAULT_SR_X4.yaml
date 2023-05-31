@@ -7,7 +7,7 @@ SCALE: 4
 # run device model
 DEVICE_ID: 0
 # Model weights path
-MODEL_PATH: "./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K.pth.tar"
+MODEL_WEIGHTS_PATH: "./results/pretrained_models/SwinIRNet_default_sr_x4-DIV2K.pth.tar"
 
 # Model define
 MODEL:
@@ -17,21 +17,21 @@ MODEL:
   CHANNELS: 64
   COMPILED: False
 
-DATASET:
-  PAIRED_TEST_GT_IMAGES_DIR: "./data/Set5/GTmod12"
-  PAIRED_TEST_LR_IMAGES_DIR: "./data/Set5/LRbicx4"
+TEST:
+  DATASET:
+    PAIRED_TEST_GT_IMAGES_DIR: "./data/Set5/GTmod12"
+    PAIRED_TEST_LR_IMAGES_DIR: "./data/Set5/LRbicx4"
 
-# Test hyperparameters
-HYP:
-  IMGS_PER_BATCH: 1
-  SHUFFLE: False
-  NUM_WORKERS: 1
-  PIN_MEMORY: True
-  PERSISTENT_WORKERS: True
+  # Test hyperparameters
+  HYP:
+    IMGS_PER_BATCH: 1
+    SHUFFLE: False
+    NUM_WORKERS: 1
+    PIN_MEMORY: True
+    PERSISTENT_WORKERS: True
 
-# Only test Y channel
-ONLY_TEST_Y_CHANNEL: True
+  # Only test Y channel
+  ONLY_TEST_Y_CHANNEL: True
 
-SAVE_IMAGE: False
-SAVE_DIR_PATH: None
-PRINT_FREQ: 1
+  SAVE_IMAGE: False
+  SAVE_IMAGE_DIR: None

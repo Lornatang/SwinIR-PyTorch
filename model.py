@@ -16,8 +16,7 @@ import math
 import os
 import warnings
 from itertools import repeat
-from typing import Any
-from typing import cast, Dict, List, Union
+from typing import Any, cast, Dict, List, Union
 
 import torch
 from torch import nn, Tensor
@@ -120,7 +119,7 @@ class SwinIR(nn.Module):
         image_size (tuple(int)): Input image size. Default: (64, 64)
         patch_size (tuple(int)): Patch size. Default: (1, 1)
         in_channels (int): Number of input image channels. Default: 3
-        in_channels (int): Number of output image channels. Default: 3
+        out_channels (int): Number of output image channels. Default: 3
         channels (int): Number of model feature channels. Default: 64
         embed_dim (int): Patch embedding dimension. Default: 96
         depths (tuple(int)): Depth of each Swin Transformer layer.
